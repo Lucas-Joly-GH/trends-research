@@ -1,0 +1,22 @@
+# Core scientific stack
+numpy
+pandas
+scipy
+scikit-learn
+tqdm
+joblib
+matplotlib
+
+# Regime detection
+hmmlearn
+
+# C++ backtest accelerator (build-time)
+pybind11
+setuptools
+
+# GAN robustness pipeline
+torch
+
+# Bayesian latent-factor risk filter (optional, heavy — lazily imported)
+numpyro
+jax

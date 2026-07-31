@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+build/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Data & heavy binaries (intentionally excluded from the public showcase)
+*.pkl
+*.parquet
+*.h5
+*.log
+Data/
+_cache/
+_*_cache/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# LaTeX build artefacts
+*.aux
+*.out
+*.synctex.gz
+*.toc
+*.fls
+*.fdb_latexmk
