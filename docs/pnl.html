@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily P&amp;L &mdash; 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:26px 0 6px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  h3{font-size:13px;font-weight:bold;margin:0 0 6px}
+  p{margin:0 0 9px;max-width:74ch}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px}
+  .cols{display:flex;gap:18px;align-items:flex-start}
+  .side{flex:0 0 175px}
+  .main{flex:1;min-width:0}
+  .picker{border:1px solid var(--rule-strong);max-height:660px;overflow-y:auto}
+  .picker table{border-collapse:collapse;width:100%;font-size:12.5px}
+  .picker td{padding:2px 8px;border-bottom:1px solid var(--rule-faint);white-space:nowrap}
+  .picker td:nth-child(2){text-align:right;color:var(--muted)}
+  /* SCOPED TO BEAT THE COLUMN RULE.  A bare `.neg` is (0,1,0) and loses to
+     `.picker td:nth-child(2)` at (0,2,1), so the class landed and the colour
+     did not -- the same specificity trap as `td.l` in journal.html.  Order
+     matters as much as weight here: this sits AFTER the column rule so it wins,
+     and BEFORE `tr.on` so the selected row keeps its reversed text. */
+  .picker td.neg{color:var(--neg)}
+  .picker td.pos{color:var(--pos)}
+  .picker tr{cursor:pointer}
+  .picker tr:hover td{background:var(--hover)}
+  .picker tr.on td{background:var(--sel-bg);color:var(--sel-fg)}
+  .mo{background:var(--panel);font-weight:bold}
+
+  /* The sheet is 63 rows and the reconciliation beside it is five.  Sticky keeps
+     the tie to NAV on screen while you scroll the attribution, which is the
+     whole reason for showing them side by side. */
+  .split{display:flex;gap:34px;align-items:flex-start}
+  .col-l{flex:0 0 clamp(340px, 34%, 460px)}
+  .col-r{flex:1;min-width:0;position:sticky;top:12px}
+  @media (max-width:900px){ .split{display:block}
+                            .col-r{position:static;margin-top:20px} }
+
+  table.data{border-collapse:collapse;width:100%;font-size:13px}
+  table.data th,table.data td{padding:3px 8px;text-align:right;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  table.data th{border-bottom:1px solid var(--rule-strong);font-weight:bold;
+    white-space:normal;vertical-align:bottom}
+  table.data th.l,table.data td.l{text-align:left}
+  .num{font-variant-numeric:tabular-nums}
+  /* Three blocks, three weights: the instruments are the detail, commission and
+     interest are the two adjustments that are NOT trading, and the totals are
+     what the reader came for. */
+  tbody.adj tr:first-child td{border-top:1px solid var(--rule-strong);padding-top:6px}
+  tbody.tot td{font-weight:bold}
+  tbody.tot tr:first-child td{border-top:2px solid var(--rule-strong);padding-top:6px}
+  tbody.tot tr:last-child td{border-bottom:2px solid var(--rule-strong)}
+  td.zero{color:var(--faint)}
+  footer{margin-top:34px;border-top:1px solid var(--rule-strong);padding-top:10px;
+         font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="journal.html">Journal</a>
+  <a href="pnl.html"><b>Daily P&amp;L</b></a>
+  <a href="mapping.html">Mapping</a>
+  <a href="qa.html">Q&amp;A</a>
+  <a href="expectations.html">Expectations</a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Daily P&amp;L</h1>
+<p class="note" id="intro">Loading&hellip;</p>
+<p class="note stale" id="stale"></p>
+
+<div class="cols">
+  <div class="side">
+    <div class="picker" id="picker"></div>
+    <p class="note" style="margin-top:6px">Net P&amp;L incl. interest</p>
+  </div>
+
+  <div class="main">
+    <h2 id="dayhead">Select a session</h2>
+
+    <div class="split">
+      <div class="col-l">
+        <table class="data num" id="sheet"></table>
+      </div>
+
+      <div class="col-r">
+        <h3>Reconciliation to net asset value</h3>
+        <table class="data num" id="walk"></table>
+        <p class="note" style="margin-top:8px" id="walknote"></p>
+        <div id="notes"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="foot">
+   <div class="fcol">
+<p>Gross P&amp;L is before commission and before interest. The instrument rows sum to Total Gross P&amp;L by construction: the
+     publisher refuses to write a session where they do not. Figures are rounded
+     to the cent, so a total can sit a cent or two off the sum of the lines above
+     it; the underlying series agree to 7e-10.</p>
+   </div>
+   <div class="fcol">
+  <p><b>Only instruments that moved the book are listed.</b> An instrument is
+     left out when its market was shut, when the book held no position in it, or
+     when the position finished exactly where it started &mdash; all three book
+     0.00, and none of them changes a total on this page. The session heading
+     counts them. The published JSON carries all 63 instruments every session,
+     with flags for which case applies, so nothing is lost to anyone checking
+     the arithmetic.</p>
+   </div>
+  </div>
+</footer>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+let DAYS = [], current = null;
+
+// TWO DECIMALS, NOT WHOLE DOLLARS.  Rounding each figure independently to the
+// dollar broke the arithmetic on screen -- 499,064 - 4,453 printed as 494,610 --
+// and a balance sheet that visibly does not add up is the one thing this page
+// cannot afford.  At the cent everything ties: across all 171 sessions the worst
+// residue is $0.03 on the instrument column and $0.02 on the walk, against $5
+// and a clean $1 break at whole dollars.
+// A ZERO HAS NO SIGN.  `Total Commissions` is rendered as `-comm`, so a
+// session that traded nothing negated 0 and printed "-0.00", which reads as a
+// rounding artefact or a bug rather than as "nothing was charged".
+const money = v => (Math.abs(v) < 0.005 ? 0 : v)
+  .toLocaleString(L, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+// `level` marks a balance rather than a movement. Opening and closing equity
+// are not gains, and painting $108m green would say they were.
+function row(label, value, strong, level) {
+  const txt = money(value);
+  // `td.zero` (0,1,1) outranks `.neg` (0,1,0) on purpose: a figure that rounds
+  // to nothing reads as nothing, not as a loss.
+  const near0 = !strong && Math.abs(value) < 0.5;
+  const sign = level ? "" : isNeg(txt) ? "neg" : isPos(txt) ? "pos" : "";
+  const k = ((near0 ? "zero " : "") + sign).trim();
+  return `<tr><td class="l">${label}</td>`
+       + `<td${k ? ` class="${k}"` : ""}>${txt}</td></tr>`;
+}
+
+function show(date){
+  current = date;
+  document.querySelectorAll("#picker tr").forEach(tr =>
+    tr.classList.toggle("on", tr.dataset.d === date));
+  fetch(bust(`data/pnl/${date}.json`)).then(r=>r.json()).then(d=>{
+    const b = d.book;
+    const gross = b.gross_pnl_USD, comm = b.commission_USD, itr = b.interest_USD;
+    const net = gross - comm;
+
+    // THE COUNT MEANS MARKETS THAT TRADED, not rows.  A holiday leaves the
+    // instrument on the sheet holding its position with nothing to book, and
+    // counting it as an instrument that made nothing is the misreading the dash
+    // exists to prevent.
+    // ONLY INSTRUMENTS THAT MOVED THE BOOK ARE LISTED.  There were three ways
+    // to book nothing -- shut, no position, or a position that went nowhere --
+    // and telling them apart cost a dash, a dot, a 0.00 and a paragraph of
+    // footnote, on rows contributing zero to every total on the page.  The
+    // distinction was real and was not worth the reader's time; the count below
+    // keeps it, and the JSON keeps all 63 rows either way.
+    const moved = d.instruments.filter(
+      r => r.session && r.held && Math.abs(r.gross_pnl_USD) >= 0.005);
+    const quiet = d.instruments.length - moved.length;
+    el("dayhead").textContent =
+      `Session ${d.date} — ${moved.length} `
+      + `instrument${moved.length === 1 ? "" : "s"} moved the book`
+      + (quiet ? `, ${quiet} flat or shut and not listed` : "");
+
+    // Commission is shown NEGATIVE.  It is a deduction, and a balance sheet
+    // whose column does not visibly add up invites the reader to check the
+    // arithmetic and conclude we got it wrong.
+    el("sheet").innerHTML =
+      `<thead><tr><th class="l">Instrument</th><th>Gross P&amp;L $</th></tr></thead>`
+      + "<tbody>"
+      + moved.map(r => row(r.instrument, r.gross_pnl_USD)).join("")
+      + `</tbody><tbody class="adj">`
+      + row("Total Commissions", -comm, true)
+      + row("Interests", itr, true)
+      + `</tbody><tbody class="tot">`
+      + row("Total Gross P&amp;L", gross, true)
+      + row("Total Net P&amp;L", net, true)
+      + row("Total Net P&amp;L + Interests", net + itr, true)
+      + "</tbody>";
+
+    el("walk").innerHTML = "<tbody>"
+      + row("Opening equity", b.opening_equity_USD, true, true)
+      + row("+ Gross P&amp;L", gross, true)
+      + row("− Commissions", -comm, true)
+      + row("+ Interest", itr, true)
+      + `</tbody><tbody class="tot">`
+      + row("= Closing equity", b.closing_equity_USD, true, true)
+      + "</tbody>";
+
+    el("walknote").textContent =
+      "The same figure the Overview reports as net asset value at the end of "
+      + "this session.";
+
+    el("notes").innerHTML =
+      `<p class="note"><b>About commissions.</b> Commissions are the product of
+       the day+1 execution: orders decided on the previous close and filled at
+       this session&rsquo;s open. They have nothing to do with this
+       session&rsquo;s trading performance, which is the gross block.</p>`
+      + `<p class="note"><b>About the interest.</b> We operate on an overnight
+       principle, so the interest received on day n depends on the NAV of day
+       n−1. The balance that earned here was $${money(b.interest_base_USD)},
+       carried from ${b.interest_from_date} over ${b.calendar_days} calendar
+       day${b.calendar_days === 1 ? "" : "s"} at
+       ${b.rate_annual_pct.toFixed(2)}% a year. A session after a weekend or a
+       holiday accrues every calendar day it spans, which is why a Monday pays
+       about three times a Tuesday.</p>`;
+
+    if (location.hash.slice(1) !== date) history.replaceState(null,"","#"+date);
+  }).catch(e=>{ el("dayhead").textContent = "Could not load " + date + " — " + e; });
+}
+
+fetch(bust("data/pnl_index.json")).then(r=>r.json()).then(j=>{
+  DAYS = j.days;
+  el("intro").textContent =
+    `${DAYS.length} sessions, ${DAYS[0].date} to ${DAYS[DAYS.length-1].date}. `
+    + `Newest first. Each session's gross P&L by instrument, the two `
+    + `adjustments that are not trading, and the tie back to net asset value.`;
+  el("stale").textContent = staleNote(DAYS[DAYS.length-1].date);
+
+  let html = "<table>", seen = "";
+  for (const r of [...DAYS].reverse()) {
+    const mo = r.date.slice(0,7);
+    if (mo !== seen) { seen = mo;
+      html += `<tr class="mo"><td colspan="2">${mo}</td></tr>`; }
+    const k = r.net_total_USD;
+    const kk = Math.round(Math.abs(k)/1000);
+    const s = (k >= 0 ? "+" : "−") + kk.toLocaleString("en-US") + "k";
+    // COLOUR THE VALUE, NOT THE STRING.  `isNeg(s) ? "neg" : "pos"` had no
+    // zero branch, so a session that netted +$200 printed a GREEN "+0k" and
+    // one that netted -$200 a RED "-0k" -- same magnitude, opposite colours,
+    // both showing nothing.  A session that rounds away is neither.
+    const cls = kk === 0 ? "zero" : k < 0 ? "neg" : "pos";
+    // Scanning 171 dates for the bad ones is the reason this column exists.
+    html += `<tr data-d="${r.date}"><td>${r.date.slice(8)}</td>`
+          + `<td class="${cls}">${s}</td></tr>`;
+  }
+  el("picker").innerHTML = html + "</table>";
+  el("picker").querySelectorAll("tr[data-d]").forEach(tr =>
+    tr.addEventListener("click", () => show(tr.dataset.d)));
+
+  const want = location.hash.slice(1);
+  show(DAYS.some(x=>x.date===want) ? want : DAYS[DAYS.length-1].date);
+}).catch(e=>{ el("intro").textContent = "Could not load data/pnl_index.json — " + e; });
+
+addEventListener("hashchange", () => {
+  const h = location.hash.slice(1);
+  if (h && h !== current && DAYS.some(x=>x.date===h)) show(h);
+});
+</script>
+</body>
+</html>

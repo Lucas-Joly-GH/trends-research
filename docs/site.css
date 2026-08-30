@@ -1,0 +1,257 @@
+/* The palette, defined once, in two schemes.
+
+   COLOUR CARRIES INFORMATION HERE, IT DOES NOT DECORATE.  This site's whole
+   argument is "here are the numbers, check them", and a coloured section header
+   or a branded accent bar reads as marketing, which quietly undercuts that.
+   There are exactly two hues with meaning -- below zero and above it -- and
+   everything else is ink, rule and ground.
+
+   WHERE THE SIGN COLOURS APPLY IS DELIBERATE.  Red marks any negative anywhere,
+   because a minus is always worth catching.  Green is OPT-IN per column
+   (`signed: true`), because a column that can only be positive -- a price, a
+   quantity, a commission -- learns nothing from being green, and colouring it
+   turns a report into a trading terminal.  Both are redundant with a sign
+   already on screen, so nothing is carried by hue alone and nothing is lost to
+   colour blindness.  `--pos` is blue-shifted rather than a pure green for the
+   same reason: it stays separable from `--neg` under deuteranopia.
+
+   EVERY COLOUR IS DEFINED ONCE.  The `--d-*` and `--l-*` values below are the
+   two schemes -- a role that reuses another role's colour aliases it rather
+   than repeating the literal -- and the blocks after them do nothing but point
+   the working tokens at one set or the other.  A theme is then a four-line edit in one place rather
+   than a parallel stylesheet that drifts -- which is the failure this pipeline
+   has already paid for three times elsewhere. */
+:root{
+  /* --- dark: terminal --------------------------------------------------- */
+  /* PURE BLACK, AND NO ACCENT HUE AT ALL.  The ground is #000 because that is
+     what a terminal actually is; the previous #04070a was a deep blue-black,
+     and a blue cast is what makes a terminal look like a theme OF one. The
+     greys are neutral with it -- a blue-tinted panel against a pure black
+     ground reads as an unfinished conversion, not a decision.
+
+     THE LABEL COLOUR IS A BRIGHTER GREY, NOT A COLOUR.  Amber and cyan were
+     both tried. Dropping to a warm white leaves exactly two hues on the page,
+     red and green, and they are the two that MEAN something -- so nothing has
+     to compete with them for attention. It also measures best: 139/172 from the
+     sign colours under deuteranopia, against amber's 17/152.
+
+     High contrast is acceptable HERE and not for body text: these are headings
+     and column heads, a few words at a time. Glare is a property of a paragraph
+     you read for a minute, not of a word you glance at.
+
+     PURE BLACK IS FINE HERE BECAUSE THE INK IS NOT PURE WHITE.  The pairing
+     that hurts is black against white; this ink lands at 11.1:1, inside the
+     comfortable band and slightly BELOW where the palette sat on the blue
+     ground. Full black cost nothing in readability because the other half of
+     the pair was already right. */
+  --d-page:#000000;  --d-panel:#0d0d0d;
+  --d-ink:#bcbcbc;   --d-muted:#8a8a8a;  --d-faint:#565656;
+  --d-accent:#e6e6e6;                    /* labels, headings, the series line */
+  --d-neg:#ff5c5c;   --d-pos:#35c46b;
+  --d-rule-strong:#3a3a3a; --d-rule:#1e1e1e; --d-rule-faint:#141414;
+  /* The selected row is drawn in the accent on a lighter grey, so it reads as
+     the SAME highlight the headings use rather than a second one. Aliased, not
+     repeated: that sentence is the decision, and a second literal would hide it
+     and let the two drift. */
+  --d-hover:#171717; --d-sel-bg:#2a2a2a;  --d-sel-fg:var(--d-accent);
+  --d-fill-op:.14;
+  --d-c1:#5aa2f0;    --d-c2:#f0a93c;     --d-c3:#c08ae8;
+  --d-c1-op:.62;
+
+  /* --- light ------------------------------------------------------------ */
+  /* The sign hues are NOT the dark ones reused.  The dark green is washed out
+     on paper and the dark red reads as candy; both go darker to hold contrast
+     against a light ground, which is why a scheme is two palettes rather than
+     one palette plus an inversion.
+     Where a role IS another role's colour, it says so rather than repeating the
+     value -- "strong rules are drawn in ink" and "selection inverts ink and
+     page" are the actual design decisions, and a second literal would hide
+     them and let the two drift apart. */
+  --l-page:#fdfdfc;  --l-panel:#f1f2f4;
+  --l-ink:#14213d;   --l-muted:#5a6472;  --l-faint:#9aa1ad;
+  --l-neg:#9b2226;   --l-pos:#176b45;
+  --l-rule-strong:var(--l-ink); --l-rule:#c9ccd4; --l-rule-faint:#e6e8ec;
+  --l-hover:#e7e9ed;
+  --l-sel-bg:var(--l-ink);      --l-sel-fg:var(--l-page);
+  --l-fill-op:.10;
+  --l-c1:#2f5d9e;    --l-c2:#b3690a;     --l-c3:#6f4a9c;
+  --l-c1-op:.52;
+  /* Light keeps the report identity: no accent hue at all. The terminal is a
+     COLOUR treatment and nothing else -- see the note on `--accent` below. */
+  --l-accent:var(--l-ink);
+
+  /* --- the working tokens, pointed at LIGHT by default ------------------- */
+  /* LIGHT IS WHAT A VISITOR GETS.  This is a results page for a thesis: it
+     should open as a document, and dark is an opt-in for whoever wants it. The
+     choice persists, so anyone who prefers the terminal sets it once.
+
+     `prefers-color-scheme` NO LONGER DECIDES, and dropping it is the actual
+     change here. Flipping which scheme `:root` holds would have altered nothing
+     observable -- a media query for the other scheme covers the same two cases
+     either way -- so honouring the system had to go for "light by default" to
+     mean anything to a reader whose system says dark.
+     `color-scheme` is not cosmetic: it is what makes the scrollbars and the
+     canvas the browser paints behind the page match, so it moves with the rest. */
+  color-scheme:light;
+  --page:var(--l-page);   --panel:var(--l-panel);
+  --ink:var(--l-ink);     --muted:var(--l-muted);  --faint:var(--l-faint);
+  --neg:var(--l-neg);     --pos:var(--l-pos);
+  --rule-strong:var(--l-rule-strong);
+  --rule:var(--l-rule);   --rule-faint:var(--l-rule-faint);
+  --hover:var(--l-hover); --sel-bg:var(--l-sel-bg); --sel-fg:var(--l-sel-fg);
+  --fill-op:var(--l-fill-op);
+  --c1:var(--l-c1); --c2:var(--l-c2); --c3:var(--l-c3);
+  --c1-op:var(--l-c1-op);
+  --accent:var(--l-accent);
+}
+
+/* The only other state. There is no `[data-theme="light"]` block and no media
+   query any more: `:root` above IS light, so two mappings cover every case
+   where there used to be three. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --page:var(--d-page);   --panel:var(--d-panel);
+  --ink:var(--d-ink);     --muted:var(--d-muted);  --faint:var(--d-faint);
+  --neg:var(--d-neg);     --pos:var(--d-pos);
+  --rule-strong:var(--d-rule-strong);
+  --rule:var(--d-rule);   --rule-faint:var(--d-rule-faint);
+  --hover:var(--d-hover); --sel-bg:var(--d-sel-bg); --sel-fg:var(--d-sel-fg);
+  --fill-op:var(--d-fill-op);
+  --c1:var(--d-c1); --c2:var(--d-c2); --c3:var(--d-c3);
+  --c1-op:var(--d-c1-op);
+  --accent:var(--d-accent);
+}
+
+/* The toggle. Sits in the nav, right-aligned, and looks like the links beside
+   it -- it is a control on a page that has no other chrome, so it should not
+   announce itself as one. */
+/* The contact takes over as the right-hand group's anchor, so it and the
+   toggle sit together at the far edge instead of splitting the free space
+   between them -- which is what two `margin-left:auto` siblings would do. */
+/* The stamp is now the right-hand group's anchor and the contact follows it,
+   so the three sit together at the far edge. Two `margin-left:auto` siblings
+   would split the free space between them instead. */
+.stamp{margin-left:auto;font-size:12px;color:var(--muted)}
+.contact{margin-left:20px}
+.stamp + .contact{margin-left:20px}
+.contact + .theme{margin-left:14px}
+/* The nav was a single non-wrapping row, which fitted while every item was one
+   short word. An email address is not, and on a phone the row overflowed and
+   clipped the toggle off the right edge. Let it wrap, and below the breakpoint
+   drop the contact's auto margin so the items simply flow instead of one of
+   them claiming all the slack on the first line. */
+nav{flex-wrap:wrap;row-gap:2px}
+@media (max-width:760px){
+  .stamp,.contact{margin-left:0}
+}
+.theme{margin-left:auto;font:inherit;color:var(--ink);background:none;
+       border:0;padding:0;cursor:pointer;text-decoration:underline}
+.theme:hover{color:var(--muted)}
+
+/* THE TYPE IS THE SAME IN BOTH SCHEMES, so it is not a token.  A monospaced
+   face with uppercase headings was tried twice and removed twice: the browser's
+   own serif is what the page should read as, dark or light. `--face`, `--caps`
+   and `--track` were deleted rather than defined identically in both schemes,
+   which is the rule -- a scheme token is only defensible while the schemes
+   disagree.
+
+   `--accent` still differs, and is now the ONLY thing that does: a brighter
+   grey in dark, ink navy in light.
+   It marks the things that NAME data rather than being data -- headings, column
+   heads, the nav, the series line. The numbers stay ink, or the sign colours
+   would have to fight an accent for attention. */
+h2,h3{color:var(--accent)}
+th{color:var(--accent)}
+nav a{color:var(--accent)}
+
+/* Only rendered when there IS something to say -- empty otherwise, so it
+   takes no space on a healthy page. */
+.stale:not(:empty){color:var(--neg);border-left:3px solid var(--neg);
+                   padding-left:8px;margin-bottom:12px}
+
+/* The marker must be findable and never louder than the figure beside it. */
+.stats sup{font-size:9px;vertical-align:super;margin-left:2px;
+           font-weight:normal}
+.stats sup a{color:var(--muted);text-decoration:none}
+.stats sup a:hover{text-decoration:underline}
+/* Land the note under the sticky-free viewport top rather than flush against
+   it, so the row a reader jumped to is not the first thing cropped. */
+.notes li{margin-bottom:5px;scroll-margin-top:14px}
+.notes li:target{background:var(--panel)}
+.notes{font-size:12.5px;color:var(--muted);margin:0 0 14px;padding-left:20px;
+       max-width:78ch}
+
+/* WIDE-SCREEN FOOTERS.  Prose caps at ~74ch for readability, which on a 1560px
+   page left the footer a narrow ribbon down the left with ~1100px of nothing
+   beside it.  Above 1440px the cap comes off and each block takes the whole
+   width, stacked, read straight down.
+
+   WHY NOT COLUMNS, having tried both.  Side-by-side blocks fill the width too,
+   but they send the eye down and back up, and a footnote that moves to another
+   column when the window changes is a poor target for the superscript that
+   points at it.  Full width costs nothing here because these blocks are SHORT:
+   at ~240ch of capacity most notes land on one line and none exceeds two, so
+   the long-measure objection -- which is about finding the start of the NEXT
+   line -- barely applies. */
+.foot{display:block}
+@media (min-width:1440px){
+  .foot p,.foot .notes{max-width:none}
+}
+
+.neg{color:var(--neg)}
+.pos{color:var(--pos)}
+
+/* CHART COLOUR LIVES IN CSS, NOT IN THE SVG ATTRIBUTES.  `stroke="var(--ink)"`
+   is not valid in a presentation attribute, so the drawing code emits classes
+   and the palette resolves here -- which also means the charts follow the
+   scheme without the drawing code knowing a scheme exists. */
+svg .grid{stroke:var(--rule-faint);stroke-width:1}
+svg .tick{stroke:var(--rule-faint);stroke-width:1}
+svg .axis{fill:var(--muted);font-size:10px}
+svg .series{stroke:var(--accent);stroke-width:1.2;fill:none}
+svg .base{stroke:var(--rule-strong);stroke-width:.8;stroke-dasharray:3 3}
+svg .fill{fill:var(--neg);fill-opacity:var(--fill-op)}
+/* The equity curve's area, split at its own starting capital: above the line
+   the book is up on the year, below it the book is down. Same treatment the
+   drawdown panel gets, in two tones because this series crosses its baseline
+   and that one cannot.
+   --pos / --neg RATHER THAN A CHART HUE, because on this page green and red
+   already mean up and down -- every signed figure in the summary beside it is
+   coloured that way. A blue area would have been the one place where "the book
+   is ahead" was said in a colour that means nothing anywhere else. */
+svg .fill-up{fill:var(--pos);fill-opacity:var(--fill-op)}
+svg .fill-dn{fill:var(--neg);fill-opacity:var(--fill-op)}
+/* THE EXPECTATIONS PAGE. Colour lives on classes here for the same reason it
+   does on every other chart: the theme toggle repaints by changing what a class
+   means, and a fill baked into a presentation attribute would survive the
+   switch and come out wrong in the other scheme. */
+svg .bar-bt{fill:var(--c1);fill-opacity:var(--c1-op)}
+svg .step-lv{stroke:var(--c2);stroke-width:1.7;fill:none}
+svg .bar-pos{fill:var(--pos);fill-opacity:.72}
+svg .bar-neg{fill:var(--neg);fill-opacity:.72}
+svg .bar-brk{fill:var(--neg)}
+svg .qq-dot{fill:var(--c1);fill-opacity:.85}
+/* Mean / median / mode verticals. Distinguished by DASH PATTERN as well as
+   colour, so they stay separable in both themes and when printed. */
+svg .mk-mean{stroke:var(--c2);stroke-width:1.8}
+svg .mk-median{stroke:var(--c3);stroke-width:1.6;stroke-dasharray:5 3}
+svg .mk-mode{stroke:var(--pos);stroke-width:1.6;stroke-dasharray:1 3}
+.key i.sw-mean{background:var(--c2)}
+.key i.sw-median{background:var(--c3)}
+.key i.sw-mode{background:var(--pos)}
+svg .ser-n{stroke:var(--c3);stroke-width:1.6;fill:none}
+svg .ser-cf{stroke:var(--c2);stroke-width:1.6;fill:none;stroke-dasharray:4 3}
+svg .ser-h{stroke:var(--neg);stroke-width:1.8;fill:none}
+.key i.sw-bt{background:var(--c1);opacity:.7}
+.key i.sw-lv{background:var(--c2)}
+.key i.sw-var{background:var(--rule-strong)}
+.key i.sw-n{background:var(--c3)}
+.key i.sw-cf{background:var(--c2)}
+.key i.sw-h{background:var(--neg)}
+.key i.sw-pos{background:var(--pos);opacity:.72}
+.key i.sw-neg{background:var(--neg);opacity:.72}
+.key i.sw-brk{background:var(--neg)}
+svg .hv-line{stroke:var(--ink);stroke-width:.8;stroke-dasharray:2 2}
+svg .hv-dot{fill:var(--ink)}
+svg .hv-text{fill:var(--ink);stroke:var(--page);stroke-width:3;
+             paint-order:stroke;font-size:11px}

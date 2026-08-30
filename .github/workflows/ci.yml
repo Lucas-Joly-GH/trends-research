@@ -1,0 +1,65 @@
+name: CI
+
+# WHAT CAN RUN HERE, AND WHY IT IS ONLY PART OF THE SUITE
+#
+# This pipeline's real checks are differential. `Update.py` runs nine reports
+# that compare the books, the FX and IRX series, the positions, the order
+# ledger and the published site against each other, plus a reconciliation that
+# recomputes P&L, commission, interest and equity from the trading books, the
+# instrument mapping and IRX. Every one of them needs the panel, which is
+# vendor data and is not in this repository — by design, not by neglect. None
+# of that can run on a clean checkout and none of it is attempted here.
+#
+# What runs here is what stands on its own, with NO dependencies at all:
+#
+#   compileall        every Python file under Live/ parses
+#   verify_track.py   the published track audits against itself, using only
+#                     the JSON in docs/ and the instrument mapping — both of
+#                     which are in this repository
+#
+# The second one is the point. It is the check an OUTSIDE READER can run: it
+# takes nothing on trust, needs no engine and no panel, and asks whether the
+# published record contradicts itself — does every balance sheet close, does
+# one session's closing equity equal the next one's opening, does the headline
+# match the series behind it.
+#
+# A green tick here does NOT mean the strategy is right, or that the pipeline
+# ran, or that the site is current. It means what is published is internally
+# consistent. Run `python Live/Update.py` locally before relying on it.
+#
+# NOTHING IS INSTALLED, deliberately. `verify_track.py` is standard library
+# only, so that "anyone can reproduce this" is a fact rather than a claim with
+# a requirements file attached.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: dependency-free suites (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # Catches a syntax error on a version we do not develop on, which is the
+      # one class of breakage that would otherwise reach main unnoticed.
+      - name: Every Live module parses
+        run: python -m compileall -q Live
+
+      # Audits the published track using only the files in it -- no panel, no
+      # engine, no trust in either. This is the check an outside reader can
+      # reproduce, which is the whole point of publishing the ledgers.
+      - name: The published track reconciles against itself
+        run: python Live/5_Publish/verify_track.py

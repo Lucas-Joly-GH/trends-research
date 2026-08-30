@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Journal — 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  /* `margin:0` with a max-width pins the page to the left edge: on a 1920px
+     window the content sat in the left half and the rest was empty. `auto`
+     centres it.  Invisible on a narrow viewport, which is why it survived --
+     the preview pane was 863px and the body filled it exactly.
+     Both pages share the width so the nav does not jump when you switch. */
+  /* FLUID, NOT FIXED.  A hard 1060px centred on a 1920px monitor left ~430px
+     dead on each side.  min() caps the line length on a wide screen and yields
+     to the viewport below the cap, so no breakpoint is needed. Prose does not
+     stretch with it -- `p` still caps at 74ch, and the left column is clamped
+     -- so the width goes to the charts and the tables, which can use it. */
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:26px 0 6px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  p{margin:0 0 9px;max-width:74ch}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px}
+  /* The picker holds "28  21  30" and nothing wider, so 190px was 35px of
+     donated whitespace the executed table needed. */
+  .cols{display:flex;gap:18px;align-items:flex-start}
+  .side{flex:0 0 155px}
+  .main{flex:1;min-width:0}
+  .picker{border:1px solid var(--rule-strong);max-height:640px;overflow-y:auto}
+  .picker table{border-collapse:collapse;width:100%;font-size:12.5px}
+  .picker td{padding:2px 8px;border-bottom:1px solid var(--rule-faint);white-space:nowrap}
+  .picker td:nth-child(2),.picker td:nth-child(3){text-align:right;color:var(--muted)}
+  .picker tr{cursor:pointer}
+  .picker tr:hover td{background:var(--hover)}
+  .picker tr.on td{background:var(--sel-bg);color:var(--sel-fg)}
+  .mo{background:var(--panel);font-weight:bold}
+  table.data{border-collapse:collapse;width:100%;font-size:13px}
+  table.data th,table.data td{padding:3px 8px;text-align:right;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  /* HEADERS MAY WRAP, DATA MAY NOT.  Nine nowrap columns made the executed
+     table 682px inside a 588px box: it scrolled sideways, and once scrolled the
+     first column left the screen so the headers appeared shifted by one against
+     the data. Letting `Decision close` and `Commission $` take two lines
+     recovers ~90px and keeps the precise labels -- shortening them to Close and
+     Comm would save the same space by reintroducing the fill/decision ambiguity
+     the names exist to prevent. */
+  table.data th{border-bottom:1px solid var(--rule-strong);font-weight:bold;
+    white-space:normal;vertical-align:bottom}
+  /* Scoped to beat `table.data td` on specificity: a bare `td.l` is (0,1,1)
+     and loses to (0,1,2), which silently right-aligned every column. */
+  table.data th.l,table.data td.l{text-align:left}
+  .num{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+  footer{margin-top:34px;border-top:1px solid var(--rule-strong);padding-top:10px;
+         font-size:12.5px;color:var(--muted)}
+  /* Same reasoning as the overview: stretched over a wide page the six- and
+     nine-column tables grow every gap instead of getting more readable.  Paired,
+     they stay dense and a reader sees what was given and what filled at once --
+     which is the comparison this page exists to make.  The threshold is higher
+     here than on the overview because the date picker takes 173px off the top
+     before the two panes are measured. */
+  .pair{display:block}
+  @media (min-width:1500px){
+    .pair{display:flex;gap:28px;align-items:flex-start}
+    .pane{flex:1;min-width:0}
+    .pane h2:first-of-type{margin-top:0}
+  }
+  @media (max-width:760px){ .cols{display:block} .side{margin-bottom:20px} }
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="journal.html"><b>Journal</b></a>
+  <a href="pnl.html">Daily P&amp;L</a>
+  <a href="mapping.html">Mapping</a>
+  <a href="qa.html">Q&amp;A</a>
+  <a href="expectations.html">Expectations</a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Journal</h1>
+<p class="note" id="intro">Loading…</p>
+<p class="note stale" id="stale"></p>
+
+<div class="cols">
+  <div class="side">
+    <div class="picker" id="picker"></div>
+    <p class="note" style="margin-top:6px">Given / executed</p>
+  </div>
+
+  <div class="main">
+    <h2 id="dayhead">Select a session</h2>
+    <p class="note" id="daynote"></p>
+
+    <div class="pair">
+      <div class="pane">
+        <h2>Given — decided on this close, sent to the next open</h2>
+        <div class="scroll"><table class="data num" id="given"></table></div>
+      </div>
+
+      <div class="pane">
+        <h2>Executed — filled at this open</h2>
+        <div class="scroll"><table class="data num" id="executed"></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="foot">
+   <div class="fcol">
+<p>The two tables are different sets of trades. An order decided on this
+     session's close goes to market at the <i>next</i> open; what filled at this
+     session's open was decided the session before. Quantities are contracts;
+     prices are that session's open and the previous close. A session where no
+       order was given and none filled has no entry here; it still appears on
+       the <a href="pnl.html">Daily P&amp;L</a> page, because open positions
+       carried through it.</p>
+   </div>
+   <div class="fcol">
+<p><b>Realised P&amp;L</b> is the share of a position's accumulated profit that
+     the trade on that row banked, not the position's move for the session. A
+     trade that adds to a position realises nothing; one that halves it realises
+     half of what the position had accrued; a close realises the rest. A winner
+     you are still holding therefore shows zero, and every dollar the book has
+     made is either realised on some row or still sitting in an open
+     position.</p>
+   </div>
+  </div>
+</footer>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+let DAYS = [], current = null;
+
+function show(date){
+  current = date;
+  document.querySelectorAll("#picker tr").forEach(tr =>
+    tr.classList.toggle("on", tr.dataset.d === date));
+  fetch(bust(`data/days/${date}.json`)).then(r=>r.json()).then(d=>{
+    el("dayhead").textContent = "Session " + d.date;
+    el("daynote").textContent =
+      `${d.given.length} order(s) given, ${d.executed.length} filled.`;
+    table(el("given"), d.given, [C.inst,C.con,C.side,C.qty,C.kind,C.close]);
+    table(el("executed"), d.executed,
+          [C.inst,C.con,C.side,C.qty,C.kind,C.open,C.close,C.comm,C.real]);
+    if (location.hash.slice(1) !== date) history.replaceState(null,"","#"+date);
+  }).catch(e=>{ el("daynote").textContent = "Could not load " + date + " — " + e; });
+}
+
+fetch(bust("data/index.json")).then(r=>r.json()).then(j=>{
+  DAYS = j.days;
+  const RUN = j.sessions || DAYS.length;
+  const SPAN = `${DAYS[0].date} to ${DAYS[DAYS.length - 1].date}`;
+  el("intro").textContent =
+    // NOT the same count as the overview's, and saying so is the point: this
+    // page lists sessions that had an ORDER, the overview counts sessions in
+    // the run. They differed by one -- 2026-04-03, when most of the book was
+    // shut and nothing was traded -- and two pages printing "N sessions" for
+    // different N reads as an error rather than as two facts.
+    (DAYS.length === RUN
+      ? `${DAYS.length} sessions, ${SPAN}. `
+      : `${DAYS.length} of the run's ${RUN} sessions had orders, ${SPAN}. `)
+    + `Newest first.`;
+  el("stale").textContent = staleNote(DAYS[DAYS.length-1].date);
+
+  // Newest first, grouped by month, so scanning back is the default motion --
+  // the question a reader has is almost always "what happened recently".
+  let html = "<table>", seen = "";
+  for (const r of [...DAYS].reverse()) {
+    const mo = r.date.slice(0,7);
+    if (mo !== seen) {
+      seen = mo;
+      html += `<tr class="mo"><td colspan="3">${mo}</td></tr>`;
+    }
+    html += `<tr data-d="${r.date}"><td>${r.date.slice(8)}</td>`
+          + `<td>${r.n_given}</td><td>${r.n_executed}</td></tr>`;
+  }
+  el("picker").innerHTML = html + "</table>";
+  el("picker").querySelectorAll("tr[data-d]").forEach(tr =>
+    tr.addEventListener("click", () => show(tr.dataset.d)));
+
+  const want = location.hash.slice(1);
+  show(DAYS.some(x=>x.date===want) ? want : DAYS[DAYS.length-1].date);
+}).catch(e=>{ el("intro").textContent = "Could not load data/index.json — " + e; });
+
+addEventListener("hashchange", () => {
+  const h = location.hash.slice(1);
+  if (h && h !== current && DAYS.some(x=>x.date===h)) show(h);
+});
+</script>
+</body>
+</html>

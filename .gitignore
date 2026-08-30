@@ -1,0 +1,86 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+build/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Data & heavy binaries (intentionally excluded from the public showcase)
+*.pkl
+*.parquet
+*.h5
+*.log
+# ANCHORED TO THE ROOT.  Unanchored, `Data/` matches at ANY depth -- and on a
+# case-insensitive filesystem it also swallowed `docs/data/`, which is where the
+# published JSON lives.  The site would have deployed as a blank page saying it
+# could not load its own data, with nothing in git status to explain why.
+/Data/
+_cache/
+_*_cache/
+
+# DERIVED, and vendor-priced.  All of these are rebuildable from the private
+# panel, and all carry open/close data that must not reach a public repo -- see
+# Live/README.md.  Ignored rather than trusted to discipline: 191 of the .npz
+# fixtures below were staged by a stray `git add .` and caught only by chance.
+#
+# .cache/ holds the worksheet cache: one parquet per instrument plus a .key
+# sidecar.  *.parquet was already covered, the .key files were not, and a
+# directory rule is the honest way to say "none of this belongs in git".
+# Rebuilt in ~290s by `trading_book.py --clear-cache` followed by a normal run.
+#
+# FX/*.csv is derived on the same terms and by the same script -- one file per
+# conversion rate, rebuilt in seconds from the cached worksheets, carrying rates
+# extrapolated from closes, which is the same class of data as the panel itself.
+# The journal beside them is prose and IS tracked.
+Live/2_Engine/Trading_book/
+Live/2_Engine/FX/*.csv
+# Stage 3's positions are derived from the books on the same terms, and
+# rebuild in seconds.  portfolio.py and the journal are tracked.
+Live/2_Engine/IRX/IRX.csv
+Live/3_Portfolio/Positions/
+Live/3_Portfolio/Portfolio.csv
+# Stage 4's order ledger is derived from stage 3's positions on the same terms
+# and rebuilds in ~1s.  It carries contract-level sizes for every session since
+# 1990, which is the position book stated a second way -- if Positions/ does not
+# belong in a public repo then neither does this.  bookkeeping.py is tracked.
+Live/4_Bookkeeping/*.csv
+# The journal STORE is data, and the most sensitive kind: every row carries a
+# position, a price and the signal that produced it.  journal.py is tracked; the
+# store never is.  A live store must also never be reconstructable from a public
+# repo -- that is the whole point of it being append-only and local.
+Live/4_Bookkeeping/Journal/orders/
+Live/4_Bookkeeping/Journal/fills/
+Live/4_Bookkeeping/Journal/MANIFEST.json
+Live/4_Bookkeeping/Journal/_checksums.jsonl
+# docs/ IS THE ONE PLACE VENDOR-DERIVED NUMBERS ARE PUBLISHED ON PURPOSE, and
+# it is NOT ignored.  2026 only, open/close only, non-commercial -- the carve-out
+# is stated in full in Live/README.md.  What lands there is written by
+# Live/5_Publish/publish.py through a whitelist, never by hand: if you find
+# yourself copying a file into docs/data/, stop, because the whitelist is the
+# only thing standing between this repo and a licence problem.
+.cache/
+_reference_backup_*/
+
+# Virtualenv -- created locally, never committed. See production/README.md.
+.venv/
+venv/
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# LaTeX build artefacts
+*.aux
+*.out
+*.synctex.gz
+*.toc
+*.fls
+*.fdb_latexmk
+
+# Stage 6 reads this for the site's "Updated" line; it is a local run
+# artifact and reaches the repo through docs/data/latest.json.
+Live/.pipeline_run.json

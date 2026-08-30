@@ -1,0 +1,64 @@
+norgate_code,description,asset_class,pointsize,currency,exchange,total_avg_cost_rt_LocalCurrency,tick_size
+6A,AUDUSD currency,FX,100000.0,USD,CME,15.0,5e-05
+6B,GBPUSD currency,FX,62500.0,USD,CME,11.25,0.0001
+6C,CADUSD currency,FX,100000.0,USD,CME,15.0,5e-05
+6E,EURUSD currency,FX,125000.0,USD,CME,17.5,5e-05
+6J,JPYUSD currency,FX,125000.0,USD,CME,17.5,5e-05
+6M,MEXUSD currency,FX,500000.0,USD,CME,10.0,1e-05
+6N,NZDUSD currency,FX,100000.0,USD,CME,15.0,5e-05
+6S,CHFUSD currency,FX,125000.0,USD,CME,17.5,5e-05
+DX,US Dollar Index,FX,1000.0,USD,ICE US,6.0,0.001
+SR3,3-Month SOFR (US Rates),STIR,2500.0,USD,CME,11.25,0.0025
+LEU9,3-Month Euribor (EU Rates),STIR,2500.0,EUR,ICE Europe,17.5,0.005
+SO3,3-Month SONIA (UK Rates),STIR,2500.0,GBP,ICE Europe,11.25,0.0025
+VX,VIX Volatility Index,Vol,1000.0,USD,CFE,80,0.05
+ZT,US 2 Year Note (Short),Bond,2000.0,USD,CBOT,12.81,0.00390625
+ZF,US 5 Year Note (Medium),Bond,1000.0,USD,CBOT,12.81,0.0078125
+ZN,US 10 Year Note (Benchmark),Bond,1000.0,USD,CBOT,20.63,0.015625
+ZB,US 30 Year Bond (Long),Bond,1000.0,USD,CBOT,36.25,0.03125
+UB,Ultra Bond (25yr+ Duration),Bond,1000.0,USD,CBOT,36.25,0.03125
+FGBS9,Euro-Schatz (German 2yr),Bond,1000.0,EUR,EUREX,10.0,0.005
+FGBM9,Euro-Bobl (German 5yr),Bond,1000.0,EUR,EUREX,15.0,0.01
+FGBL9,Euro-Bund (German 10yr),Bond,1000.0,EUR,EUREX,15.0,0.01
+LLG,Long Gilt (UK 10yr),Bond,1000.0,GBP,ICE Europe,15.0,0.01
+CGB,Canadian 10 year bond,Bond,1000.0,CAD,MX,17,0.01
+YXT4,ASX 10 Year Treasury Bond,Bond,1000.0,AUD,ASX,9.5,0.0025
+ES,S&P 500 E-mini,Equity,50.0,USD,CME,17.5,0.25
+NQ,Nasdaq 100 E-mini,Equity,20.0,USD,CME,10.0,0.25
+EMD,S&P MidCap 400 E-mini,Equity,100.0,USD,CME,35,0.1
+RTY,Russell 2000 E-mini,Equity,50.0,USD,CME,10.0,0.1
+FESX9,EURO STOXX 50,Equity,10.0,EUR,EUREX,15.0,1.0
+FDAX9,DAX Index,Equity,25.0,EUR,EUREX,17.5,0.5
+LFT9,FTSE 100,Equity,10.0,GBP,ICE Europe,10.0,0.5
+NIY,Nikkei 225 (Yen),Equity,500.0,JPY,CME,6000,5.0
+HSI,Hang Seng Index,Equity,50.0,HKD,HKEX,89,1.0
+YAP4,ASX SPI 200,Equity,25.0,AUD,ASX,32,1.0
+CL,Crude Oil WTI,OilGas,1000.0,USD,NYMEX,15.0,0.01
+BRN,Brent Crude Oil,OilGas,1000.0,USD,ICE Europe,15.0,0.01
+RB,RBOB Gasoline,OilGas,42000.0,USD,NYMEX,9.2,0.0001
+HO,Heating Oil,OilGas,42000.0,USD,NYMEX,9.2,0.0001
+NG,Natural Gas US,OilGas,10000.0,USD,NYMEX,15.0,0.001
+EUA,Carbon Emissions Allowance,Carbon,1000.0,EUR,ICE Europe,25.0,0.01
+GC,Gold,Metals,100.0,USD,COMEX,15.0,0.1
+SI,Silver (Standard),Metals,50.0,USD,COMEX,30.0,0.5
+HG,Copper,Metals,250.0,USD,COMEX,17.5,0.05
+PL,Platinum,Metals,50.0,USD,NYMEX,15.0,0.1
+PA,Palladium,Metals,100.0,USD,NYMEX,35,0.1
+ZC,Corn,Ags,50.0,USD,CBOT,17.5,0.25
+ZS,Soybean,Ags,50.0,USD,CBOT,17.5,0.25
+ZL,Soybean Oil,Ags,600.0,USD,CBOT,11.0,0.01
+ZM,Soybean Meal,Ags,100.0,USD,CBOT,15.0,0.1
+ZW,Wheat (SRW),Ags,50.0,USD,CBOT,17.5,0.25
+CC,Cocoa,Ags,10.0,USD,ICE US,15.0,1.0
+KC,Coffee (Arabica),Ags,375.0,USD,ICE US,42.5,0.05
+SB,Sugar #11,Ags,1120.0,USD,ICE US,16.2,0.01
+CT,Cotton #2,Ags,500.0,USD,ICE US,10.0,0.01
+RS,Canola (Rapeseed),Ags,20.0,CAD,ICE Canada,13.0,0.1
+LE,Live Cattle,Ags,400.0,USD,CME,25,0.025
+HE,Lean Hogs,Ags,400.0,USD,CME,25,0.025
+GF,Feeder Cattle,Ags,500.0,USD,CME,42.5,0.025
+BTC,Bitcoin,Crypto,5.0,USD,CME,60,5.0
+ETH,Ether,Crypto,50.0,USD,CME,55,0.5
+GAS,Low Sulphur Gasoil,OilGas,100.0,USD,ICE Europe,55,0.25
+SJB,Japanese Govt Bond (Mini),Bond,100000.0,JPY,SGX,1800,0.01
+SXF,Canadian TSX 60 Index,Equity,200.0,CAD,MX,47,0.1

@@ -1,0 +1,536 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Historical expectations &mdash; 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:30px 0 8px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;
+      border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  p{margin:0 0 9px;max-width:74ch}
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px;max-width:88ch}
+  h2[id]{scroll-margin-top:14px}
+  .scroll{overflow-x:auto}
+  table.data{border-collapse:collapse;width:100%;font-size:13px;max-width:1150px}
+  table.data th,table.data td{padding:3px 8px;text-align:right;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  table.data th{border-bottom:1px solid var(--rule-strong);font-weight:bold;
+    white-space:normal;vertical-align:bottom}
+  table.data th.l,table.data td.l{text-align:left}
+  table.data tr.hl td{background:var(--panel)}
+  tr.cls td{background:var(--panel);font-weight:bold;text-align:left;
+            border-bottom:1px solid var(--rule-strong);padding-top:7px}
+  .num{font-variant-numeric:tabular-nums}
+  .verdict{display:grid;gap:10px;margin:14px 0 10px;
+           grid-template-columns:repeat(auto-fit,minmax(215px,1fr));max-width:1150px}
+  .verdict div{border:1px solid var(--rule);padding:8px 11px 9px}
+  .verdict .k{font-size:11px;color:var(--muted);text-transform:uppercase;
+              letter-spacing:.4px}
+  .verdict .v{font-size:15px;margin:1px 0 2px}
+  .verdict .d{font-size:12px;color:var(--muted);line-height:1.35}
+  .key{font-size:12px;color:var(--muted);margin:2px 0 14px}
+  .key i{font-style:normal;display:inline-block;width:10px;height:10px;
+         margin:0 5px 0 14px}
+  .key i:first-child{margin-left:0}
+  /* Two charts abreast on a wide screen, stacked when there is no room. */
+  .pair{display:grid;gap:18px;max-width:1150px;
+        grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}
+  .quad{display:grid;gap:14px 18px;max-width:1150px;
+        grid-template-columns:repeat(auto-fit,minmax(430px,1fr))}
+  figure{margin:0 0 6px}
+  figcaption{font-size:12px;color:var(--muted);margin:0 0 2px}
+  svg{display:block;width:100%;height:auto}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="journal.html">Journal</a>
+  <a href="pnl.html">Daily P&amp;L</a>
+  <a href="mapping.html">Mapping</a>
+  <a href="qa.html">Q&amp;A</a>
+  <a href="expectations.html"><b>Expectations</b></a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Historical expectations</h1>
+<p class="note" id="sub"></p>
+
+<div class="verdict" id="verdict"></div>
+
+<h2 id="daily">Daily returns</h2>
+<div class="pair">
+  <figure><figcaption>Distribution, each as a share of its own sample</figcaption>
+    <div id="hist"></div><p class="key" id="histkey"></p></figure>
+  <figure><figcaption>Quantile&ndash;quantile, live against backtest</figcaption>
+    <div id="qq"></div><p class="key" id="qqkey"></p></figure>
+</div>
+<div class="scroll"><table class="data" id="moments"></table></div>
+
+<h2 id="horizon">Returns by horizon</h2>
+<div class="quad" id="quad"></div>
+<p class="key" id="quadkey"></p>
+<div class="pair" style="margin-top:12px">
+  <figure><figcaption>Skew by horizon</figcaption><div id="skew"></div></figure>
+  <figure><figcaption>Excess kurtosis by horizon</figcaption><div id="kurt"></div></figure>
+</div>
+<div class="scroll"><table class="data" id="horizons"></table></div>
+
+<h2 id="annual">Calendar years</h2>
+<figure><div id="years"></div></figure>
+<p class="note" id="yearnote"></p>
+
+<h2 id="var">Value at Risk and expected shortfall</h2>
+<div class="pair">
+  <figure><figcaption>VaR as the confidence level moves</figcaption>
+    <div id="sweepv"></div><p class="key" id="sweepvkey"></p></figure>
+  <figure><figcaption>Expected shortfall as the confidence level moves</figcaption>
+    <div id="sweepc"></div><p class="key" id="sweepckey"></p></figure>
+</div>
+<div class="scroll"><table class="data" id="vartable"></table></div>
+<p class="note">Normal reads the quantile off a Gaussian curve.
+Cornish&ndash;Fisher corrects that quantile for the observed skew and kurtosis.
+Historical sorts the realised returns.</p>
+
+<h2 id="breach">Breaches in the live window</h2>
+<figure><div id="timeline"></div><p class="key" id="tlkey"></p></figure>
+<div class="scroll"><table class="data" id="breachtable"></table></div>
+
+<h2 id="drawdown">Drawdown</h2>
+<figure><figcaption>Backtest drawdown depth, share of sessions at each
+  depth</figcaption><div id="ddhist"></div></figure>
+<div class="scroll"><table class="data" id="dd"></table></div>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+fetch(bust("data/expectations.json")).then(r => r.json()).then(j => {
+
+const CI = (n, m) => 1.96 * Math.sqrt((m === 3 ? 6 : 24) / n);
+const sg = v => (v >= 0 ? "+" : "-") + Math.abs(v).toFixed(2);
+const P2 = v => (v * 100).toFixed(2) + "%";
+const P0 = v => (v * 100).toFixed(0) + "%";
+const P1 = v => (v * 100).toFixed(1) + "%";
+const ANN = Math.sqrt(256);
+const bt = j.moments.find(r => r.horizon === "daily");
+const lv = j.live_moments.find(r => r.horizon === "daily");
+const skewCI = CI(lv.n, 3), kurtCI = CI(lv.n, 4);
+
+el("sub").textContent =
+  "Backtest " + j.backtest_start + " to " + j.backtest_end + ", "
+  + bt.n.toLocaleString(L) + " sessions. Live " + j.live_start + " to "
+  + j.live_end + ", " + lv.n + " sessions.";
+
+el("verdict").innerHTML = [
+  ["Shape", "matches",
+   "skew " + sg(bt.skew) + " predicted, " + sg(lv.skew) + " realised"],
+  ["Distribution", j.ks_reject ? "rejected" : "cannot reject",
+   "Kolmogorov-Smirnov " + j.ks_d.toFixed(3) + " against " + j.ks_crit.toFixed(3)
+   + " critical at 5%"],
+  ["Scale", "below spec", P2(lv.sd * ANN) + " annualised against "
+   + P2(bt.sd * ANN)],
+  ["Tail", "untested", "excess kurtosis " + sg(lv.kurt) + " against "
+   + sg(bt.kurt) + "; no crisis in " + lv.n + " sessions"],
+].map(c => '<div><div class="k">' + c[0] + '</div><div class="v">' + c[1]
+           + '</div><div class="d">' + c[2] + "</div></div>").join("");
+
+// ---------------------------------------------------------------- helpers
+const svg = (w, h, body, label) =>
+  '<svg viewBox="0 0 ' + w + " " + h + '" role="img" aria-label="' + label
+  + '">' + body + '<g class="hv"></g></svg>';
+
+// ONE HOVER FOR EVERY CHART ON THE PAGE.  `pts` are already in viewBox
+// coordinates, so this does not need to know what it is decorating -- a
+// histogram bin, a scatter point, a bar or a session all reduce to an x, an
+// optional y for the dot, and the text to print. Nearest-by-x, because on a
+// 171-bar timeline requiring the pointer to land ON the bar is unusable.
+function hoverable(divId, W, H, mt, yb, pts) {
+  const node = el(divId) && el(divId).querySelector("svg");
+  if (!node || !pts.length) return;
+  const layer = node.querySelector(".hv");
+  const clear = () => { layer.innerHTML = ""; };
+  node.addEventListener("pointerleave", clear);
+  node.addEventListener("pointermove", ev => {
+    // Client pixels through the element's CURRENT box: the viewBox is 1:1
+    // with CSS pixels only until the browser scales it, and reading clientX
+    // raw would drift the readout on every responsive resize.
+    const r = node.getBoundingClientRect();
+    if (!r.width) return;
+    const sx = (ev.clientX - r.left) * (W / r.width);
+    let best = pts[0], bd = Infinity;
+    for (const q of pts) {
+      const dd = Math.abs(q.x - sx);
+      if (dd < bd) { bd = dd; best = q; }
+    }
+    const left = best.x > W / 2;
+    layer.innerHTML =
+      '<line class="hv-line" x1="' + best.x.toFixed(1) + '" y1="' + mt
+      + '" x2="' + best.x.toFixed(1) + '" y2="' + yb + '"/>'
+      + (best.y == null ? ""
+         : '<circle class="hv-dot" cx="' + best.x.toFixed(1) + '" cy="'
+           + best.y.toFixed(1) + '" r="3"/>')
+      + '<text class="hv-text" x="' + (left ? best.x - 8 : best.x + 8).toFixed(1)
+      + '" y="' + (mt + 11) + '" text-anchor="' + (left ? "end" : "start")
+      + '">' + best.label + "</text>";
+  });
+}
+const ln = (c, x1, y1, x2, y2) => '<line class="' + c + '" x1="' + x1 + '" y1="'
+  + y1 + '" x2="' + x2 + '" y2="' + y2 + '"/>';
+const tx = (x, y, s, a) => '<text class="axis" x="' + x + '" y="' + y
+  + '" text-anchor="' + (a || "middle") + '">' + s + "</text>";
+
+// A y-axis of `n` gridlines between lo and hi, labelled by `fmt`.
+function yaxis(o, ml, W, mr, lo, hi, Y, n, fmt) {
+  for (let g = 0; g <= n; g++) {
+    const v = lo + (hi - lo) * g / n, y = Y(v).toFixed(1);
+    o.push(ln("grid", ml, y, W - mr, y), tx(ml - 6, +y + 3, fmt(v), "end"));
+  }
+}
+
+// A histogram from {bins, counts}, drawn as a share of its own total so that
+// samples of wildly different size can share an axis.
+function histBars(id, h, opts) {
+  const W = opts.W || 560, H = opts.H || 240, ml = 44, mr = 10,
+        mt = 10, mb = 26;
+  const n = h.counts.length, tot = h.counts.reduce((a, c) => a + c, 0) || 1;
+  const d = h.counts.map(c => c / tot);
+  const hi = Math.max.apply(null, d) * 1.10 || 1;
+  const X = v => ml + (W - ml - mr) * (v - h.bins[0]) / (h.bins[n] - h.bins[0]);
+  const Y = v => mt + (H - mt - mb) * (1 - v / hi);
+  const o = [];
+  yaxis(o, ml, W, mr, 0, hi, Y, 4, P1);
+  for (let i = 0; i < n; i++) {
+    if (!d[i]) continue;
+    const x0 = X(h.bins[i]), x1 = X(h.bins[i + 1]);
+    o.push('<rect class="' + (opts.cls || "bar-bt") + '" x="' + x0.toFixed(2)
+      + '" y="' + Y(d[i]).toFixed(2) + '" width="' + (x1 - x0 - 0.5).toFixed(2)
+      + '" height="' + (Y(0) - Y(d[i])).toFixed(2) + '"/>');
+  }
+  if (opts.over) {                       // a second series, as a step outline
+    const t2 = opts.over.counts.reduce((a, c) => a + c, 0) || 1;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      const v = opts.over.counts[i] / t2;
+      pts.push(X(h.bins[i]).toFixed(2) + "," + Y(v).toFixed(2),
+               X(h.bins[i + 1]).toFixed(2) + "," + Y(v).toFixed(2));
+    }
+    o.push('<polyline class="step-lv" points="' + pts.join(" ") + '"/>');
+  }
+  (opts.marks || []).forEach((m, i) => {
+    const x = X(m.v).toFixed(2);
+    o.push(ln("base", x, mt, x, Y(0)),
+           tx(+x - 4, mt + 10 + i * 13, m.t, "end"));
+  });
+  ["mean", "median", "mode"].forEach(k => {
+    if (!opts.stats || h[k] == null) return;
+    const x = X(h[k]).toFixed(2);
+    o.push(ln("mk-" + k, x, mt, x, Y(0)));
+  });
+  o.push(ln("tick", ml, Y(0), W - mr, Y(0)));
+  (opts.ticks || []).forEach(t =>
+    o.push(tx(X(t).toFixed(2), H - mb + 16, P0(t))));
+  el(id).innerHTML = svg(W, H, o.join(""), opts.label || "distribution");
+  const ov = opts.over
+    ? opts.over.counts.reduce((a, c) => a + c, 0) || 1 : 0;
+  hoverable(id, W, H, mt, Y(0).toFixed(1), h.counts.map((c, i) => ({
+    x: (X(h.bins[i]) + X(h.bins[i + 1])) / 2,
+    y: Y(d[i]),
+    label: P1(h.bins[i]) + " to " + P1(h.bins[i + 1]) + "  " + P1(d[i])
+      + (opts.over ? "  |  live " + P1(opts.over.counts[i] / ov) : "")})));
+}
+
+// ------------------------------------------------------------ daily shape
+histBars("hist", {bins: j.bins, counts: j.backtest_counts}, {
+  H: 260, over: {counts: j.live_counts},
+  marks: j.var.filter(r => r.level === 0.95 || r.level === 0.99)
+           .map(r => ({v: r.hist, t: P0(r.level) + " VaR " + P2(r.hist)})),
+  ticks: [-0.04, -0.03, -0.02, -0.01, 0, 0.01, 0.02, 0.03, 0.04],
+  label: "Daily return distribution, backtest against live"});
+el("histkey").innerHTML = '<i class="sw-bt"></i>backtest<i class="sw-lv"></i>live'
+  + '<i class="sw-var"></i>historical VaR';
+
+// Q-Q: a straight diagonal means the two samples share a distribution. This is
+// the Kolmogorov-Smirnov result as a picture rather than as a statistic.
+(function () {
+  const W = 560, H = 260, ml = 48, mr = 10, mt = 10, mb = 30;
+  const all = j.qq.reduce((a, p) => a.concat(p), []);
+  const lo = Math.min.apply(null, all) * 1.05;
+  const hi = Math.max.apply(null, all) * 1.05;
+  const X = v => ml + (W - ml - mr) * (v - lo) / (hi - lo);
+  const Y = v => mt + (H - mt - mb) * (1 - (v - lo) / (hi - lo));
+  const o = [];
+  for (let g = 0; g <= 4; g++) {
+    const v = lo + (hi - lo) * g / 4;
+    o.push(ln("grid", ml, Y(v).toFixed(1), W - mr, Y(v).toFixed(1)),
+           tx(ml - 6, (Y(v) + 3).toFixed(1), P1(v), "end"),
+           tx(X(v).toFixed(1), H - mb + 16, P1(v)));
+  }
+  o.push(ln("base", X(lo).toFixed(1), Y(lo).toFixed(1),
+            X(hi).toFixed(1), Y(hi).toFixed(1)));
+  j.qq.forEach(p => o.push('<circle class="qq-dot" cx="' + X(p[0]).toFixed(2)
+    + '" cy="' + Y(p[1]).toFixed(2) + '" r="2"/>'));
+  el("qq").innerHTML = svg(W, H, o.join(""),
+    "Quantile-quantile plot of live against backtest returns");
+  hoverable("qq", W, H, mt, H - mb, j.qq.map(q => ({
+    x: X(q[0]), y: Y(q[1]),
+    label: "backtest " + P2(q[0]) + "   live " + P2(q[1])})));
+})();
+el("qqkey").innerHTML = '<i class="sw-lv"></i>live quantile (vertical) against '
+  + 'backtest quantile (horizontal)<i class="sw-var"></i>the diagonal';
+
+const mrow = (lab, a, b, c) => '<tr><td class="l">' + lab + '</td><td class="num">'
+  + a + '</td><td class="num">' + b + '</td><td class="num">' + c + "</td></tr>";
+el("moments").innerHTML =
+  '<thead><tr><th class="l">Daily returns</th><th>Backtest</th><th>Live</th>'
+  + "<th>95% interval on the live estimate</th></tr></thead><tbody>"
+  + mrow("Mean, annualised", P2(bt.mean * 256), P2(lv.mean * 256),
+         "± " + P2(1.96 * lv.sd * ANN / Math.sqrt(lv.n)))
+  + mrow("Median session", P2(bt.median), P2(lv.median), "—")
+  + mrow("Volatility, annualised", P2(bt.sd * ANN), P2(lv.sd * ANN), "—")
+  + mrow("Skew", sg(bt.skew), sg(lv.skew),
+         sg(lv.skew - skewCI) + " to " + sg(lv.skew + skewCI))
+  + mrow("Excess kurtosis", sg(bt.kurt), sg(lv.kurt),
+         sg(lv.kurt - kurtCI) + " to " + sg(lv.kurt + kurtCI))
+  + mrow("Sessions up", P0(bt.up), P0(lv.up), "—")
+  + mrow("Worst session", P2(bt.min), P2(lv.min), "—")
+  + mrow("Best session", P2(bt.max), P2(lv.max), "—")
+  + mrow("Kolmogorov-Smirnov", "—", j.ks_d.toFixed(4),
+         "5% critical " + j.ks_crit.toFixed(4)
+         + (j.ks_reject ? ", rejected" : ", not rejected"))
+  + "</tbody>";
+
+// --------------------------------------------------------- by horizon
+const HZ = ["daily", "weekly", "monthly", "annual"];
+const cap = s => s[0].toUpperCase() + s.slice(1);
+el("quad").innerHTML = HZ.map(h =>
+  '<figure><figcaption>' + cap(h) + " returns, "
+  + j.moments.find(r => r.horizon === h).n.toLocaleString(L) + " periods"
+  + '</figcaption><div id="h_' + h + '"></div></figure>').join("");
+const TICKS = {daily: [-0.04, -0.02, 0, 0.02, 0.04],
+               weekly: [-0.08, -0.04, 0, 0.04, 0.08],
+               monthly: [-0.15, -0.07, 0, 0.07, 0.15],
+               annual: [-0.2, 0, 0.2, 0.4]};
+HZ.forEach(h => histBars("h_" + h, j.horizon_hist[h],
+  {H: 190, ticks: TICKS[h], stats: true,
+   label: h + " return distribution"}));
+el("quadkey").innerHTML = '<i class="sw-mean"></i>mean<i class="sw-median"></i>'
+  + 'median<i class="sw-mode"></i>mode (midpoint of the tallest bar)';
+
+// Skew and kurtosis across horizons on a zero baseline: where skew crosses is
+// the trend-following signature, and the crossing is the point of the chart.
+function moChart(id, key, signed) {
+  const W = 560, H = 210, ml = 44, mr = 10, mt = 14, mb = 28;
+  const v = j.moments.map(r => r[key]);
+  const lo = Math.min(0, Math.min.apply(null, v)) * 1.3;
+  const hi = Math.max(0, Math.max.apply(null, v)) * 1.3;
+  const Y = t => mt + (H - mt - mb) * (1 - (t - lo) / (hi - lo));
+  const bw = (W - ml - mr) / j.moments.length;
+  const o = [];
+  yaxis(o, ml, W, mr, lo, hi, Y, 4, t => t.toFixed(1));
+  j.moments.forEach((r, i) => {
+    const cx = ml + bw * (i + 0.5), w = Math.min(54, bw * 0.42);
+    const y0 = Y(0), y1 = Y(r[key]);
+    o.push('<rect class="' + (!signed ? "bar-bt"
+             : r[key] >= 0 ? "bar-pos" : "bar-neg") + '" x="'
+      + (cx - w / 2).toFixed(1) + '" y="' + Math.min(y0, y1).toFixed(1)
+      + '" width="' + w.toFixed(1) + '" height="'
+      + Math.abs(y1 - y0).toFixed(1) + '"/>');
+    o.push(tx(cx.toFixed(1), H - mb + 16, cap(r.horizon)),
+           tx(cx.toFixed(1), (y1 < y0 ? y1 - 4 : y1 + 11).toFixed(1), sg(r[key])));
+  });
+  o.push(ln("tick", ml, Y(0).toFixed(1), W - mr, Y(0).toFixed(1)));
+  el(id).innerHTML = svg(W, H, o.join(""), key + " by horizon");
+  hoverable(id, W, H, mt, H - mb, j.moments.map((r, i) => ({
+    x: ml + bw * (i + 0.5), y: Y(r[key]),
+    label: cap(r.horizon) + "  " + sg(r[key]) + "  (n=" + r.n.toLocaleString(L)
+      + ")"})));
+}
+moChart("skew", "skew", true);
+moChart("kurt", "kurt", false);
+
+const hrow = r => '<td class="num">' + r.n.toLocaleString(L) + '</td><td class="num">'
+  + P2(r.mean) + '</td><td class="num">' + P2(r.median)
+  + '</td><td class="num">' + P2(r.sd) + '</td><td class="num">'
+  + sg(r.skew) + '</td><td class="num">' + sg(r.kurt) + '</td><td class="num">'
+  + P0(r.up) + '</td><td class="num">' + P2(r.min) + '</td><td class="num">'
+  + P2(r.max) + "</td>";
+el("horizons").innerHTML =
+  '<thead><tr><th class="l">Horizon</th><th>Periods</th><th>Mean</th>'
+  + "<th>Median</th>"
+  + "<th>Std dev</th><th>Skew</th><th>Excess kurtosis</th><th>% up</th>"
+  + "<th>Worst</th><th>Best</th></tr></thead><tbody>"
+  + '<tr class="cls"><td colspan="10">Backtest</td></tr>'
+  + j.moments.map(r => "<tr" + (r.skew > 0 ? ' class="hl"' : "")
+      + '><td class="l">' + cap(r.horizon) + "</td>" + hrow(r) + "</tr>").join("")
+  + '<tr class="cls"><td colspan="10">Live</td></tr>'
+  + j.live_moments.map(r => '<tr><td class="l">' + cap(r.horizon) + "</td>"
+      + hrow(r) + "</tr>").join("")
+  + "</tbody>";
+
+// ------------------------------------------------------------- calendar
+(function () {
+  const W = 1120, H = 250, ml = 46, mr = 10, mt = 12, mb = 34;
+  const v = j.annual.map(r => r.ret);
+  const lo = Math.min(0, Math.min.apply(null, v)) * 1.2;
+  const hi = Math.max.apply(null, v) * 1.12;
+  const Y = t => mt + (H - mt - mb) * (1 - (t - lo) / (hi - lo));
+  const bw = (W - ml - mr) / j.annual.length;
+  const o = [];
+  yaxis(o, ml, W, mr, lo, hi, Y, 5, P0);
+  j.annual.forEach((r, i) => {
+    const x = ml + bw * i + bw * 0.14, w = bw * 0.72;
+    const y0 = Y(0), y1 = Y(r.ret);
+    o.push('<rect class="' + (r.ret >= 0 ? "bar-pos" : "bar-neg") + '" x="'
+      + x.toFixed(1) + '" y="' + Math.min(y0, y1).toFixed(1) + '" width="'
+      + w.toFixed(1) + '" height="' + Math.abs(y1 - y0).toFixed(1) + '"/>');
+    if (r.year % 5 === 0)
+      o.push(tx((x + w / 2).toFixed(1), H - mb + 16, r.year));
+  });
+  o.push(ln("tick", ml, Y(0).toFixed(1), W - mr, Y(0).toFixed(1)));
+  el("years").innerHTML = svg(W, H, o.join(""), "Return by calendar year");
+  hoverable("years", W, H, mt, H - mb, j.annual.map((r, i) => ({
+    x: ml + bw * (i + 0.5), y: Y(r.ret),
+    label: r.year + "   " + P2(r.ret)})));
+})();
+const worst = j.annual.reduce((a, b) => a.ret < b.ret ? a : b);
+const best = j.annual.reduce((a, b) => a.ret > b.ret ? a : b);
+el("yearnote").textContent =
+  j.annual.filter(r => r.ret > 0).length + " of " + j.annual.length
+  + " years positive. Worst " + P2(worst.ret) + " (" + worst.year
+  + "), best " + P2(best.ret) + " (" + best.year + ").";
+
+// ------------------------------------------------------------------ VaR
+function sweep(id, keys, label) {
+  const W = 560, H = 250, ml = 48, mr = 12, mt = 12, mb = 30;
+  const all = [];
+  j.curve.forEach(r => keys.forEach(k => all.push(r[k[0]])));
+  const lo = Math.min.apply(null, all) * 1.08, hi = 0;
+  const X = a => ml + (W - ml - mr) * (a - 0.90) / (0.999 - 0.90);
+  const Y = v => mt + (H - mt - mb) * (1 - (v - lo) / (hi - lo));
+  const o = [];
+  yaxis(o, ml, W, mr, lo, hi, Y, 4, P1);
+  keys.forEach(k => o.push('<polyline class="' + k[1] + '" points="'
+    + j.curve.map(r => X(r.level).toFixed(2) + "," + Y(r[k[0]]).toFixed(2))
+        .join(" ") + '"/>'));
+  [0.90, 0.95, 0.99, 0.999].forEach(a =>
+    o.push(tx(X(a).toFixed(1), H - mb + 16,
+              (a * 100).toFixed(a === 0.999 ? 1 : 0) + "%")));
+  o.push(ln("tick", ml, Y(hi).toFixed(1), W - mr, Y(hi).toFixed(1)));
+  el(id).innerHTML = svg(W, H, o.join(""), label);
+  const NAME = {normal: "normal", cf: "C-F", hist: "historical",
+                normal_cvar: "normal", hist_cvar: "historical"};
+  hoverable(id, W, H, mt, (H - mb).toFixed(1), j.curve.map(r => ({
+    x: X(r.level), y: Y(r[keys[keys.length - 1][0]]),
+    label: (r.level * 100).toFixed(1) + "%   "
+      + keys.map(k => NAME[k[0]] + " " + P2(r[k[0]])).join("   ")})));
+}
+sweep("sweepv", [["normal", "ser-n"], ["cf", "ser-cf"], ["hist", "ser-h"]],
+      "VaR by confidence level, three methods");
+sweep("sweepc", [["normal_cvar", "ser-n"], ["hist_cvar", "ser-h"]],
+      "Expected shortfall by confidence level");
+el("sweepvkey").innerHTML = '<i class="sw-n"></i>normal<i class="sw-cf"></i>'
+  + 'Cornish-Fisher<i class="sw-h"></i>historical';
+el("sweepckey").innerHTML = '<i class="sw-n"></i>normal<i class="sw-h"></i>historical';
+
+el("vartable").innerHTML =
+  '<thead><tr><th class="l">Confidence</th><th>VaR, normal</th>'
+  + "<th>VaR, Cornish&ndash;Fisher</th><th>VaR, historical</th>"
+  + "<th>CVaR, normal</th><th>CVaR, historical</th>"
+  + "<th>CVaR/VaR, normal</th><th>CVaR/VaR, historical</th>"
+  + "<th>Normal understates CVaR by</th></tr></thead><tbody>"
+  + j.var.map(r => '<tr><td class="l">' + P1(r.level) + '</td><td class="num">'
+      + P2(r.normal) + '</td><td class="num">' + P2(r.cf) + '</td><td class="num">'
+      + P2(r.hist) + '</td><td class="num">' + P2(r.normal_cvar)
+      + '</td><td class="num">' + P2(r.hist_cvar) + '</td><td class="num">'
+      + r.ratio_normal.toFixed(2) + '</td><td class="num">'
+      + r.ratio_hist.toFixed(2) + '</td><td class="num">' + P0(r.understate)
+      + "</td></tr>").join("")
+  + "</tbody>";
+
+// -------------------------------------------------------------- breaches
+(function () {
+  const W = 1120, H = 230, ml = 46, mr = 10, mt = 12, mb = 26;
+  const R = j.live_returns, t95 = j.var[0].hist, t99 = j.var[1].hist;
+  const v = R.map(r => r.ret);
+  const lo = Math.min(t99, Math.min.apply(null, v)) * 1.18;
+  const hi = Math.max.apply(null, v) * 1.18;
+  const Y = t => mt + (H - mt - mb) * (1 - (t - lo) / (hi - lo));
+  const bw = (W - ml - mr) / R.length;
+  const o = [];
+  yaxis(o, ml, W, mr, lo, hi, Y, 4, P1);
+  R.forEach((r, i) => {
+    const y0 = Y(0), y1 = Y(r.ret);
+    o.push('<rect class="' + (r.ret < t95 ? "bar-brk"
+             : r.ret >= 0 ? "bar-pos" : "bar-neg") + '" x="'
+      + (ml + bw * i).toFixed(2) + '" y="' + Math.min(y0, y1).toFixed(2)
+      + '" width="' + Math.max(bw - 0.5, 0.8).toFixed(2) + '" height="'
+      + Math.max(Math.abs(y1 - y0), 0.6).toFixed(2) + '"/>');
+  });
+  [[t95, "95% VaR " + P2(t95)], [t99, "99% VaR " + P2(t99)]].forEach(t => {
+    const y = Y(t[0]).toFixed(1);
+    o.push(ln("base", ml, y, W - mr, y), tx(W - mr - 4, (+y - 4).toFixed(1),
+                                            t[1], "end"));
+  });
+  o.push(ln("tick", ml, Y(0).toFixed(1), W - mr, Y(0).toFixed(1)));
+  [0, Math.floor(R.length / 2), R.length - 1].forEach(i =>
+    o.push(tx((ml + bw * i).toFixed(1), H - mb + 16, R[i].date)));
+  el("timeline").innerHTML = svg(W, H, o.join(""),
+    "Live daily returns against the backtest VaR thresholds");
+  hoverable("timeline", W, H, mt, (H - mb).toFixed(1), R.map((r, i) => ({
+    x: ml + bw * (i + 0.5), y: Y(r.ret),
+    label: r.date + "   " + P2(r.ret)
+      + (r.ret < t95 ? "   breach" : "")})));
+})();
+el("tlkey").innerHTML = '<i class="sw-pos"></i>up<i class="sw-neg"></i>down'
+  + '<i class="sw-brk"></i>breach of the 95% threshold'
+  + '<i class="sw-var"></i>thresholds from the backtest';
+
+el("breachtable").innerHTML =
+  '<thead><tr><th class="l">Confidence</th><th>Threshold from the backtest</th>'
+  + "<th>Breaches expected</th><th>Breaches observed</th>"
+  + "<th>Kupiec statistic</th><th>Rejected at 5%</th></tr></thead><tbody>"
+  + j.breaches.map(r => "<tr" + (r.reject_5pct ? ' class="hl"' : "")
+      + '><td class="l">' + P1(r.level) + '</td><td class="num">'
+      + P2(r.threshold) + '</td><td class="num">' + r.expected.toFixed(1)
+      + '</td><td class="num">' + r.observed + '</td><td class="num">'
+      + r.kupiec_lr.toFixed(2) + '</td><td class="num">'
+      + (r.reject_5pct ? "yes" : "no") + "</td></tr>").join("")
+  + "</tbody>";
+
+// -------------------------------------------------------------- drawdown
+histBars("ddhist", j.dd_hist, {W: 1120, H: 240, cls: "bar-neg",
+  ticks: [-0.20, -0.15, -0.10, -0.05, 0],
+  marks: [{v: j.dd_live_worst, t: "live worst " + P2(j.dd_live_worst)}],
+  label: "Backtest drawdown depth distribution"});
+
+const q = j.dd_quantiles;
+el("dd").innerHTML =
+  '<thead><tr><th class="l">Drawdown</th><th>Backtest</th></tr></thead><tbody>'
+  + [["Median session", q[0]], ["10th percentile", q[1]],
+     ["1st percentile", q[2]], ["Worst", q[3]]]
+      .map(r => '<tr><td class="l">' + r[0] + '</td><td class="num">' + P2(r[1])
+                + "</td></tr>").join("")
+  + '<tr><td class="l">Sessions below a prior high</td><td class="num">'
+  + P0(j.dd_underwater) + "</td></tr>"
+  + '<tr class="hl"><td class="l">Live worst</td><td class="num">'
+  + P2(j.dd_live_worst) + " (" + P0(j.dd_percentile)
+  + " percentile of the backtest)</td></tr></tbody>";
+
+}).catch(e => {
+  el("sub").textContent = "Could not load data/expectations.json.";
+});
+</script>
+</body>
+</html>

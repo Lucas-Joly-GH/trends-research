@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Q&amp;A &mdash; 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:30px 0 6px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  p{margin:0 0 9px;max-width:74ch}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;
+      border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px;max-width:74ch}
+  /* The index of what this page answers. Each line is the question verbatim as
+     it appears on the section it jumps to, so the list and the headings cannot
+     drift into saying different things. */
+  ol.asked{margin:6px 0 4px;padding-left:22px;max-width:74ch}
+  ol.asked li{margin-bottom:3px}
+  ol.asked a{color:var(--accent)}
+  /* Land the heading a little below the top edge rather than flush against
+     it, so the section reads as arrived-at instead of cropped. */
+  h2[id]{scroll-margin-top:14px}
+  h2:target{background:var(--panel)}
+  .scroll{overflow-x:auto}
+  table.data{border-collapse:collapse;width:100%;font-size:13px;max-width:1150px}
+  table.data th,table.data td{padding:3px 8px;text-align:right;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  table.data th{border-bottom:1px solid var(--rule-strong);font-weight:bold;
+    white-space:normal;vertical-align:bottom}
+  table.data th.l,table.data td.l{text-align:left}
+  tr.cls td{background:var(--panel);font-weight:bold;text-align:left;
+            border-bottom:1px solid var(--rule-strong);padding-top:7px}
+  .num{font-variant-numeric:tabular-nums}
+  /* The headline answer to a question, sized so it reads before the table under
+     it. Four to a row on a wide page, stacking on a phone. */
+  .cards{display:flex;flex-wrap:wrap;gap:26px;margin:10px 0 14px}
+  .card{min-width:150px}
+  .card .k{font-size:12px;color:var(--muted)}
+  .card .v{font-size:22px;font-variant-numeric:tabular-nums;line-height:1.25}
+  .card .s{font-size:12px;color:var(--muted)}
+  .split{display:flex;gap:34px;align-items:flex-start}
+  .split > div{flex:1;min-width:0}
+  @media (max-width:900px){ .split{display:block} }
+  figure{margin:0 0 14px}
+  figcaption{font-size:12px;color:var(--muted);margin-top:2px}
+  svg{display:block;width:100%;height:auto;border:1px solid var(--rule-strong)}
+  .key{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);
+       margin:4px 0 0}
+  .key i{display:inline-block;width:10px;height:2px;vertical-align:middle;
+         margin-right:4px}
+  footer{margin-top:34px;border-top:1px solid var(--rule-strong);padding-top:10px;
+         font-size:12.5px;color:var(--muted)}
+  code{font-size:12.5px}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="journal.html">Journal</a>
+  <a href="pnl.html">Daily P&amp;L</a>
+  <a href="mapping.html">Mapping</a>
+  <a href="qa.html"><b>Q&amp;A</b></a>
+  <a href="expectations.html">Expectations</a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Q&amp;A</h1>
+<p class="note" id="intro">Loading&hellip;</p>
+<p class="note" id="stale"></p>
+
+<ol class="asked">
+  <li><a href="#equities">Is this just long equities?</a></li>
+  <li><a href="#attribution">Where did the money come from?</a></li>
+  <li><a href="#holdings">What does the book hold right now?</a></li>
+  <li><a href="#risk">How much of the 20% risk budget is used?</a></li>
+  <li><a href="#monthly-returns">What did each month do?</a></li>
+  <li><a href="#benchmarks">How does it look against benchmarks?</a></li>
+  <li><a href="#more">Additional questions?</a></li>
+</ol>
+
+<h2 id="equities">Is this just long equities?</h2>
+
+<div class="cards" id="corrcards"></div>
+
+<div class="split">
+  <div>
+    <p class="note" id="corrnote"></p>
+  </div>
+  <div>
+    <p class="note"><b>The ten worst sessions for equities in this run.</b> The
+       question behind the correlation is really this one: when equities fall
+       hard, what does the book do?</p>
+    <div class="scroll"><table class="data num" id="worst"></table></div>
+  </div>
+</div>
+
+<h2 id="attribution">Where did the money come from?</h2>
+
+<figure>
+  <svg id="attrib" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="attribcap"></figcaption>
+</figure>
+<div class="key" id="attribkey"></div>
+
+<div class="scroll" style="margin-top:14px">
+  <table class="data num" id="attribtable"></table>
+</div>
+
+<h2 id="holdings">What does the book hold right now?</h2>
+
+<div class="cards" id="expcards"></div>
+<p class="note" id="expnote"></p>
+<div class="scroll"><table class="data num" id="positions"></table></div>
+
+<h2 id="risk">How much of the 20% risk budget is used?</h2>
+
+<div class="cards" id="volcards"></div>
+
+<figure>
+  <svg id="vol" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="volcap"></figcaption>
+</figure>
+
+<p class="note"><b>Under target is the design, not a miss.</b> The sigmoid gates
+   are built to under-lever the book rather than chase the target, which is why
+   the line sits below it in every window of the run. The
+   <a href="index.html">Overview</a> carries the short version beside the
+   volatility figure; the paper has the long one.</p>
+
+<h2 id="monthly-returns">What did each month do?</h2>
+
+<div class="scroll"><table class="data num" id="monthly"></table></div>
+<p class="note">Compounded from the daily equity curve, after costs and
+   including interest &mdash; the same series the NAV chart on the
+   <a href="index.html">Overview</a> draws. A part-month is marked.</p>
+
+<h2 id="benchmarks">How does it look against benchmarks?</h2>
+
+<figure>
+  <svg id="bench" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="benchcap"></figcaption>
+</figure>
+<div class="key" id="benchkey"></div>
+
+<div class="scroll" style="margin-top:14px">
+  <table class="data num" id="benchtable"></table>
+</div>
+
+<h2 id="more">Additional questions?</h2>
+
+<p>I&rsquo;ve tried my very best to answer all the possible questions a reviewer
+would come up with in my paper, therefore there&rsquo;s a good chance what
+you&rsquo;re looking for has been covered there. Still, if you don&rsquo;t find
+the answer you&rsquo;re looking for, contact me through the e-mail at the top of
+this page and I&rsquo;d be pleased to answer you.</p>
+
+<footer>
+  <div class="foot">
+   <div class="fcol">
+    <p><b>Notional is the face value of the contracts held</b>, not money at
+       risk and not borrowing. A futures book posts margin, so gross notional
+       many times equity is ordinary for the asset class; it is reported here
+       because it is the number a reader cannot otherwise get, not because it
+       is a leverage ratio in the lending sense.</p>
+    <p>Attribution is gross of commission and shows where the P&amp;L was
+       earned, not what each market contributed after cost. Commission is a
+       portfolio-level figure on the
+       <a href="pnl.html">Daily P&amp;L</a> page.</p>
+   </div>
+  </div>
+</footer>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+const NUM = v => v == null ? "—" : v.toLocaleString(L, {maximumFractionDigits: 0});
+const SIGN = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "%";
+const cls2 = v => v < 0 ? "neg" : v > 0 ? "pos" : "";
+
+// Ten classes need ten distinguishable strokes, and the site's palette has two.
+// Picked for separation in BOTH schemes and checked against deuteranopia: no
+// two adjacent hues in the legend order collide under simulation.
+const PALETTE = ["#c1121f","#0a6b45","#14213d","#b5651d","#5a4fcf",
+                 "#0f7d8f","#8a1c6d","#7a7f14","#3f6bb5","#8c6f4a"];
+
+function card(k, v, s, colour) {
+  // one class attribute, not two: `class="v" class="neg"` is invalid and the
+  // browser silently drops the second, so the colour would never have applied
+  return `<div class="card"><div class="k">${k}</div>`
+       + `<div class="v${colour ? " " + colour : ""}">${v}</div>`
+       + `<div class="s">${s || ""}</div></div>`;
+}
+
+// A small multi-series renderer. `lineChart` in app.js draws one series with a
+// crosshair; this draws ten without one, and keeping it here means the shared
+// file does not grow a second charting mode used by a single page.
+function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData) {
+  // `capId`/`capFn` let a second chart reuse this: the caption element and
+  // the text it shows on hover were hard-coded to the attribution chart.
+  const F = fmtV || (v => (v >= 0 ? "+" : "−") + "$" + NUM(Math.abs(v)));
+  const svg = el(id);
+  const W = Math.round(svg.parentNode.getBoundingClientRect().width) || 900;
+  const H = Math.round(Math.min(420, Math.max(240, W * 0.34)));
+  const PL = 74, PR = 10, PT = 12, PB = 22;
+  // ZERO IS A MEANINGFUL FLOOR FOR CUMULATIVE P&L AND NOT FOR A NAV LEVEL.
+  // Anchoring at zero is right for the attribution chart, where a line at zero
+  // means "made nothing"; on three equity curves that all start at $100m it
+  // squeezed every one of them into the top eighth of the panel.
+  let lo = fitData ? Infinity : 0, hi = fitData ? -Infinity : 0;
+  for (const s of series) for (const v of s.vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  const pad = (hi - lo) * 0.06 || 1;
+  const y0 = lo - pad, y1 = hi + pad;
+  const x = i => PL + i * (W - PL - PR) / Math.max(dates.length - 1, 1);
+  const y = v => PT + (y1 - v) * (H - PT - PB) / (y1 - y0);
+  let g = "";
+  for (let t = 0; t <= 4; t++) {
+    const v = y0 + (y1 - y0) * t / 4, yy = y(v);
+    g += `<line class="grid" x1="${PL}" y1="${yy}" x2="${W - PR}" y2="${yy}"/>`
+       + `<text class="lab" x="${PL - 6}" y="${yy + 3}" text-anchor="end">`
+       + `${(v / 1e6).toFixed(1)}m</text>`;
+  }
+  if (0 >= y0 && 0 <= y1) {
+    g += `<line class="grid" x1="${PL}" y1="${y(0)}" x2="${W - PR}" y2="${y(0)}"/>`;
+  }
+  let seen = "";
+  dates.forEach((d, i) => {
+    const mo = d.slice(0, 7);
+    if (mo !== seen) { seen = mo;
+      g += `<text class="lab" x="${x(i)}" y="${H - 6}" text-anchor="middle">`
+         + `${d.slice(5, 7)}</text>`; }
+  });
+  series.forEach((s, k) => {
+    const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    g += `<polyline fill="none" stroke="${PALETTE[k % PALETTE.length]}" `
+       + `stroke-width="1.6" points="${pts}"/>`;
+  });
+  g += `<g class="hv"></g>`;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.height = H + "px";
+  svg.innerHTML = g;
+
+  // THE LEGEND IS THE READOUT.  Ten series cannot each carry a floating label
+  // without covering the chart, so hovering rewrites the legend in place to the
+  // values at that date and the caption to the date itself. Same idea as the
+  // NAV crosshair, one line of text instead of ten.
+  const legend = i => el(keyId).innerHTML = series.map((s, k) =>
+    `<span><i style="background:${PALETTE[k % PALETTE.length]}"></i>`
+    + `${s.name} ${F(s.vals[i])}</span>`).join("");
+  const LAST = dates.length - 1;
+  legend(LAST);
+
+  svg._m = {dates, series, W, H, PL, PR, PT, PB, x, y};
+  if (!svg._mBound) {
+    svg._mBound = true;
+    const reset = () => {
+      const st = svg._m; if (!st) return;
+      const layer = svg.querySelector(".hv"); if (layer) layer.innerHTML = "";
+      svg._legend(st.dates.length - 1);
+      if (capId) el(capId).textContent = svg._cap;
+    };
+    svg.addEventListener("pointerleave", reset);
+    svg.addEventListener("pointermove", ev => {
+      const st = svg._m, layer = svg.querySelector(".hv");
+      if (!st || !layer) return;
+      const r = svg.getBoundingClientRect(); if (!r.width) return;
+      const sx = (ev.clientX - r.left) * (st.W / r.width);
+      const span = (st.W - st.PL - st.PR) / Math.max(st.dates.length - 1, 1);
+      let i = Math.round((sx - st.PL) / span);
+      i = Math.max(0, Math.min(st.dates.length - 1, i));
+      const px = st.x(i);
+      layer.innerHTML =
+        `<line class="hv-line" x1="${px}" y1="${st.PT}" x2="${px}" `
+        + `y2="${st.H - st.PB}"/>`
+        + st.series.map((s, k) =>
+            `<circle cx="${px}" cy="${st.y(s.vals[i]).toFixed(1)}" r="2.5" `
+            + `fill="${PALETTE[k % PALETTE.length]}"/>`).join("")
+        + `<text class="hv-text" x="${px > st.PL + (st.W - st.PL - st.PR) / 2
+             ? px - 8 : px + 8}" y="${st.PT + 11}" text-anchor="${
+             px > st.PL + (st.W - st.PL - st.PR) / 2 ? "end" : "start"}">`
+        + `${st.dates[i]}</text>`;
+      svg._legend(i);
+      if (capId && capFn) el(capId).textContent = capFn(i, st);
+    });
+  }
+  svg._legend = legend;
+}
+
+let QA = null;
+
+Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
+             fetch(bust("data/latest.json")).then(r => r.json())])
+       .then(([j, latest]) => {
+  const META = latest.meta;
+  QA = j;
+  el("intro").textContent =
+    `As of ${j.as_of}. ${j.positions.length} positions, `
+    + `${j.exposure.long} long and ${j.exposure.short} short, across `
+    + `${new Set(j.positions.map(p => p.asset_class)).size} asset classes.`;
+  el("stale").textContent = staleNote(j.as_of);
+
+  // ---- is this just long equities? -------------------------------------
+  const zero = j.corr_lo < 0 && j.corr_hi > 0;
+  el("corrcards").innerHTML =
+      card("Correlation to " + j.bench, j.corr.toFixed(3),
+           `95% CI  ${j.corr_lo.toFixed(3)} to ${j.corr_hi.toFixed(3)}`)
+    + card("Beta", j.beta.toFixed(3), "per 1% of " + j.bench)
+    + card("R²", (j.r2 * 100).toFixed(1) + "%", "of the book explained")
+    + card("Sessions", j.n, "overlapping");
+  el("corrnote").innerHTML =
+    `Measured against <b>${j.bench}</b>, the ${j.bench_name} contract this book `
+    + `trades, over ${j.n} sessions. The interval `
+    + (zero ? "<b>spans zero</b>, so the correlation is not distinguishable "
+            + "from none on this sample"
+            : "<b>excludes zero</b>")
+    + `. An R² of ${(j.r2 * 100).toFixed(1)}% means equities explain that much `
+    + `of the book's daily variation and nothing more.`;
+
+  const w = j.worst;
+  const mb = w.reduce((a, r) => a + r.book_ret, 0) / w.length;
+  const me = w.reduce((a, r) => a + r.bench_ret, 0) / w.length;
+  const up = w.filter(r => r.book_ret > 0).length;
+  el("worst").innerHTML =
+    `<thead><tr><th class="l">Session</th><th>${j.bench}</th><th>Book</th></tr></thead><tbody>`
+    + w.map(r => `<tr><td class="l">${r.date}</td>`
+        + `<td class="${cls2(r.bench_ret)}">${SIGN(r.bench_ret * 100)}</td>`
+        + `<td class="${cls2(r.book_ret)}">${SIGN(r.book_ret * 100)}</td></tr>`).join("")
+    + `<tr><td class="l"><b>Mean</b></td>`
+    + `<td class="${cls2(me)}"><b>${SIGN(me * 100)}</b></td>`
+    + `<td class="${cls2(mb)}"><b>${SIGN(mb * 100)}</b></td></tr>`
+    + `<tr><td class="l">Book up on</td><td></td><td><b>${up} of ${w.length}</b></td></tr>`
+    + "</tbody>";
+
+  // ---- where did the money come from? ----------------------------------
+  const classes = j.attribution.map(a => a.asset_class);
+  const byDate = {};
+  for (const r of j.attribution_cum) {
+    (byDate[r.date] = byDate[r.date] || {})[r.asset_class] = r.cum_USD;
+  }
+  const dates = Object.keys(byDate).sort();
+  const series = classes.map(c => ({
+    name: c, vals: dates.map(d => byDate[d][c] ?? 0)}));
+  multiLine("attrib", dates, series, "attribkey", "attribcap",
+            (i, st) => `At ${st.dates[i]}.  Total $`
+                     + `${NUM(st.series.reduce((a, s) => a + s.vals[i], 0))}.`);
+  const tot = j.attribution.reduce((a, r) => a + r.gross_pnl_USD, 0);
+  const cap = `Cumulative gross P&L by asset class, ${dates[0]} to `
+            + `${dates[dates.length - 1]}.  Total $${NUM(tot)}.`;
+  el("attrib")._cap = cap;
+  el("attribcap").textContent = cap;
+  el("attribtable").innerHTML =
+    `<thead><tr><th class="l">Asset class</th><th>Gross P&amp;L $</th>`
+    + `<th>Share of gross movement</th></tr></thead><tbody>`
+    + j.attribution.map(r => `<tr><td class="l">${r.asset_class}</td>`
+        + `<td class="${cls2(r.gross_pnl_USD)}">${NUM(r.gross_pnl_USD)}</td>`
+        + `<td>${(Math.abs(r.share) * 100).toFixed(1)}%</td></tr>`).join("")
+    + `<tr><td class="l"><b>Total</b></td>`
+    + `<td class="${cls2(tot)}"><b>${NUM(tot)}</b></td><td></td></tr></tbody>`;
+
+  // ---- what does it hold right now? ------------------------------------
+  const e = j.exposure;
+  el("expcards").innerHTML =
+      card("Positions", e.n_positions, `${e.long} long · ${e.short} short`)
+    + card("Gross notional", "$" + NUM(e.gross_notional_USD), "face value held")
+    + card("Gross ÷ equity", e.leverage.toFixed(2) + "×", "see the note below")
+    + card("Asset classes",
+           new Set(j.positions.map(p => p.asset_class)).size, "with a position");
+  el("expnote").textContent =
+    `Every position open at the close of ${j.as_of}, largest first by notional.`;
+
+  // ---- how does it look against benchmarks? ----------------------------
+  const BC = j.bench_curves, bdates = BC.map(x => x.date);
+  const bseries = j.bench_stats.map(st => ({
+    name: st.name, vals: BC.map(x => x[st.key])}));
+  const mUSD = v => "$" + (v / 1e6).toFixed(2) + "m";
+  multiLine("bench", bdates, bseries, "benchkey", "benchcap",
+            (i, st) => `At ${st.dates[i]}.`, mUSD, true);
+  el("bench")._cap = `$100m in each, ${bdates[0]} to ${bdates[bdates.length - 1]}.`;
+  el("benchcap").textContent = el("bench")._cap;
+  el("benchtable").innerHTML =
+    `<thead><tr><th class="l"></th><th>Total return</th><th>Volatility</th>`
+    + `<th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    + j.bench_stats.map(r => `<tr><td class="l">${r.name}</td>`
+        + `<td class="${cls2(r.total)}">${(r.total * 100).toFixed(2)}%</td>`
+        + `<td>${(r.vol * 100).toFixed(2)}%</td>`
+        + `<td>${r.sharpe.toFixed(2)}</td>`
+        + `<td class="neg">${(r.max_dd * 100).toFixed(2)}%</td></tr>`).join("")
+    + "</tbody>";
+  const sc = j.bench_scaled, bhs = j.bench_stats.find(x => x.key === "bh");
+
+  // ---- how much of the risk budget is used? ----------------------------
+  // Drawn with app.js's lineChart rather than the local renderer: it is a
+  // single series, so it inherits the NAV chart's crosshair, its resize
+  // redraw and its styling for free.
+  const V = j.vol, pv = v => (v * 100).toFixed(2) + "%";
+  // THE HEADLINE IS THE OVERVIEW'S OWN FIGURE, taken from latest.json rather
+  // than recomputed, so the two pages cannot disagree. The rolling mean is a
+  // different quantity and is labelled as one -- see the note under the chart.
+  el("volcards").innerHTML =
+      card("Target", (j.vol_target * 100).toFixed(0) + "%", "annualised")
+    + card("Realised, whole run", pv(META.net_ann_vol),
+           "the figure on the Overview")
+    + card("Share of budget used",
+           (META.net_ann_vol / j.vol_target * 100).toFixed(0) + "%", "of the 20%")
+    + card("Highest " + j.vol_window + "-session window",
+           pv(Math.max(...V.map(x => x.realised))), "still under target");
+  lineChart("vol", V.map(x => ({date: x.date})), V.map(x => x.realised),
+            0, j.vol_target, {r: 0.26, min: 200, max: 330}, pv, false, pv,
+            {v: j.vol_target, label: (j.vol_target * 100).toFixed(0) + "% target"});
+  el("volcap").textContent =
+    `Trailing ${j.vol_window}-session realised volatility, annualised, `
+    + `against the ${(j.vol_target * 100).toFixed(0)}% target. `
+    + `${V[0].date} to ${V[V.length - 1].date}.`;
+  const groups = [...new Set(j.positions.map(p => p.asset_class))]
+    .sort((a, b) => a.localeCompare(b));
+  let html = `<thead><tr><th class="l">Instrument</th><th class="l">Class</th>`
+    + `<th class="l">Side</th><th>Contracts</th><th>Notional $</th>`
+    + `<th>Share of gross</th></tr></thead><tbody>`;
+  for (const g of groups) {
+    const rows = j.positions.filter(p => p.asset_class === g);
+    const gn = rows.reduce((a, r) => a + Math.abs(r.notional_USD), 0);
+    html += `<tr class="cls"><td colspan="6">${g} — ${rows.length}, `
+          + `$${NUM(gn)} gross</td></tr>`;
+    for (const r of rows) {
+      html += `<tr><td class="l">${r.instrument}</td>`
+        + `<td class="l">${r.asset_class}</td>`
+        + `<td class="l ${r.side === "SHORT" ? "neg" : "pos"}">${r.side}</td>`
+        + `<td>${NUM(r.contracts)}</td>`
+        + `<td>${NUM(Math.abs(r.notional_USD))}</td>`
+        + `<td>${(r.share_of_gross * 100).toFixed(1)}%</td></tr>`;
+    }
+  }
+  el("positions").innerHTML = html + "</tbody>";
+}).catch(e => { el("intro").textContent = "Could not load data/qa.json — " + e; });
+
+// ---- what did each month do? -------------------------------------------
+// From history.json rather than a new payload: the equity curve is already
+// published and a monthly grid is a view of it, not a new fact.
+fetch(bust("data/history.json")).then(r => r.json()).then(h => {
+  const d = h.daily;
+  const mo = {};
+  for (const r of d) (mo[r.date.slice(0, 7)] = mo[r.date.slice(0, 7)] || []).push(r);
+  const keys = Object.keys(mo).sort();
+  let prev = d[0].equity_USD - (d[0].gross_pnl_USD - d[0].commission_USD
+                                + d[0].interest_USD);
+  const rows = keys.map(k => {
+    const last = mo[k][mo[k].length - 1].equity_USD;
+    const ret = last / prev - 1;
+    prev = last;
+    return {k, ret, n: mo[k].length};
+  });
+  const lastMonth = keys[keys.length - 1];
+  el("monthly").innerHTML =
+    `<thead><tr><th class="l">Month</th><th>Return</th><th>Sessions</th>`
+    + `<th class="l"></th></tr></thead><tbody>`
+    + rows.map(r => `<tr><td class="l">${r.k}</td>`
+        + `<td class="${cls2(r.ret)}">${SIGN(r.ret * 100)}</td>`
+        + `<td>${r.n}</td>`
+        + `<td class="l">${r.k === lastMonth ? "part month" : ""}</td></tr>`).join("")
+    + "</tbody>";
+}).catch(() => {});
+
+
+
+addEventListener("resize", () => {
+  if (!QA) return;
+  const byDate = {};
+  for (const r of QA.attribution_cum) {
+    (byDate[r.date] = byDate[r.date] || {})[r.asset_class] = r.cum_USD;
+  }
+  const dates = Object.keys(byDate).sort();
+  multiLine("attrib", dates,
+            QA.attribution.map(a => ({name: a.asset_class,
+                                      vals: dates.map(d => byDate[d][a.asset_class] ?? 0)})),
+            "attribkey", "attribcap",
+            (i, st) => `At ${st.dates[i]}.  Total $`
+                     + `${NUM(st.series.reduce((a, s) => a + s.vals[i], 0))}.`);
+});
+</script>
+</body>
+</html>

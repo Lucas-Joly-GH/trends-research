@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mapping &mdash; 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:26px 0 6px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  p{margin:0 0 9px;max-width:74ch}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;
+      border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px}
+  .scroll{overflow-x:auto}
+  table.data{border-collapse:collapse;width:100%;font-size:13px;
+             max-width:1150px}
+  table.data th,table.data td{padding:3px 8px;text-align:right;
+    border-bottom:1px solid var(--rule);white-space:nowrap}
+  table.data th{border-bottom:1px solid var(--rule-strong);font-weight:bold;
+    white-space:normal;vertical-align:bottom}
+  table.data th.l,table.data td.l{text-align:left}
+  /* One band per asset class. The file is 63 rows of eight columns and the
+     first question anyone asks of it is "what is in this book", which is a
+     question about the groups, not the rows. */
+  tr.cls td{background:var(--panel);font-weight:bold;text-align:left;
+            border-bottom:1px solid var(--rule-strong);padding-top:7px}
+  .num{font-variant-numeric:tabular-nums}
+  footer{margin-top:34px;border-top:1px solid var(--rule-strong);padding-top:10px;
+         font-size:12.5px;color:var(--muted)}
+  code{font-size:12.5px}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html">Overview</a>
+  <a href="journal.html">Journal</a>
+  <a href="pnl.html">Daily P&amp;L</a>
+  <a href="mapping.html"><b>Mapping</b></a>
+  <a href="qa.html">Q&amp;A</a>
+  <a href="expectations.html">Expectations</a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Mapping</h1>
+<p class="note" id="intro">Loading&hellip;</p>
+
+<p>Every contract the book can trade, with the specification needed to check any
+   number on this site. This is the file the pipeline itself reads &mdash;
+   <code>instrument_mapping.csv</code> &mdash; not a description of it.</p>
+
+<p class="note"><b>How to use it.</b> A position&rsquo;s move for a session is
+   <code>quantity &times; (close &minus; open) &times; point value &times; FX</code>.
+   The quantity and both prices are on the
+   <a href="journal.html">Journal</a> page, the point value is here, and the FX
+   rate is the contract&rsquo;s currency against the dollar on that date.
+   Commission on one side of a trade is half the round-trip cost, converted at
+   the same rate.</p>
+
+<h2 id="head">Contracts</h2>
+<div class="scroll"><table class="data num" id="map"></table></div>
+
+<footer>
+  <div class="foot">
+   <div class="fcol">
+<p>Point value is what one full point of price is worth in the
+     contract&rsquo;s own currency; tick size is the smallest increment the
+     exchange quotes. Round-trip cost is charged half per side, which is why a
+     roll costs a full round trip rather than nothing.</p>
+   </div>
+   <div class="fcol">
+<p><b>How the round-trip cost is built, and what it is not.</b> It is an
+     assumption, not a fee schedule, and it has two terms:
+     <code>one full tick + a fee floor of about $5 equivalent</code>. The tick
+     stands for crossing the spread once each way; the fee floor covers
+     commission, exchange and clearing. Against published rates a competitive
+     broker on a US venue pays roughly $4.10&ndash;4.70 round trip, so the floor
+     sits deliberately above it, in every currency.</p>
+   </div>
+  </div>
+</footer>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+const NUM = v => v == null ? "—" : v.toLocaleString(L, {maximumFractionDigits: 8});
+
+fetch(bust("data/mapping.json")).then(r=>r.json()).then(j=>{
+  const rows = j.instruments;
+  const classes = [...new Set(rows.map(r=>r.asset_class))].sort();
+  el("intro").textContent =
+    `${rows.length} contracts across ${classes.length} asset classes, `
+    + `${new Set(rows.map(r=>r.exchange)).size} exchanges and `
+    + `${new Set(rows.map(r=>r.currency)).size} currencies.`;
+
+  let html = "<thead><tr>"
+    + `<th class="l">Instrument</th><th class="l">Description</th>`
+    + `<th class="l">Exchange</th><th class="l">Currency</th>`
+    + `<th>Point value</th><th>Tick size</th><th>Round-trip cost</th>`
+    + "</tr></thead><tbody>";
+  for (const c of classes) {
+    const group = rows.filter(r=>r.asset_class===c)
+                      .sort((a,b)=>a.instrument.localeCompare(b.instrument));
+    html += `<tr class="cls"><td colspan="7">${c} — ${group.length}</td></tr>`;
+    for (const r of group) {
+      html += "<tr>"
+        + `<td class="l">${r.instrument}</td>`
+        + `<td class="l">${r.description}</td>`
+        + `<td class="l">${r.exchange}</td>`
+        + `<td class="l">${r.currency}</td>`
+        + `<td>${NUM(r.pointsize)}</td>`
+        + `<td>${NUM(r.tick_size)}</td>`
+        + `<td>${NUM(r.cost_rt_local)}</td>`
+        + "</tr>";
+    }
+  }
+  el("map").innerHTML = html + "</tbody>";
+}).catch(e=>{ el("intro").textContent = "Could not load data/mapping.json — " + e; });
+</script>
+</body>
+</html>

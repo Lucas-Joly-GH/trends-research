@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Systematic futures — 2026 run</title>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<link rel="stylesheet" href="site.css?v=ee38815a">
+<style>
+  /* Plain: white ground, black text, browser default face, no colour.
+     Rules and alignment do the work. */
+  /* `margin:0` with a max-width pins the page to the left edge: on a 1920px
+     window the content sat in the left half and the rest was empty. `auto`
+     centres it.  Invisible on a narrow viewport, which is why it survived --
+     the preview pane was 863px and the body filled it exactly.
+     Both pages share the width so the nav does not jump when you switch. */
+  /* FLUID, NOT FIXED.  A hard 1060px centred on a 1920px monitor left ~430px
+     dead on each side.  min() caps the line length on a wide screen and yields
+     to the viewport below the cap, so no breakpoint is needed. Prose does not
+     stretch with it -- `p` still caps at 74ch, and the left column is clamped
+     -- so the width goes to the charts and the tables, which can use it. */
+  body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
+       max-width:min(1560px, 95vw);line-height:1.5}
+  h1{font-size:20px;font-weight:normal;margin:0 0 2px}
+  h2{font-size:14px;font-weight:bold;margin:30px 0 6px;
+     border-bottom:1px solid var(--rule-strong);padding-bottom:3px}
+  p{margin:0 0 9px;max-width:74ch}
+  nav{display:flex;align-items:baseline;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid var(--rule-strong)}
+  nav a{margin-right:14px}
+  a{color:var(--ink)}
+  .sub{margin:0 0 16px}
+  /* Prose caps at 74ch for readability, which left the right half of a 1060px
+     page empty while the charts ran full width underneath.  Putting the reading
+     matter beside the pictures uses the width instead of padding it. */
+  .split{display:flex;gap:32px;align-items:flex-start}
+  /* Grows a little with the shell but never past a comfortable measure, so the
+     extra width on a wide monitor goes to the charts rather than to long lines. */
+  .col-l{flex:0 0 clamp(380px, 28%, 470px)}
+  .col-r{flex:1;min-width:0}
+  .col-l p{max-width:none}
+  /* Only the RIGHT column's first heading loses its top margin, so NAV lines up
+     with the first line of prose.  `.split h2:first-of-type` also matched
+     Summary, which follows a paragraph and needs the gap. */
+  .col-r h2:first-of-type{margin-top:0}
+  @media (max-width:860px){ .split{display:block} .col-l{margin-bottom:24px} }
+  /* Pending and Executed hold six and nine short columns.  Stretched across a
+     1560px page every gap grows -- "Contract" got 296px to hold "6B" -- and
+     forcing the surplus into one column instead just moves the hole.  Side by
+     side they keep a printed-table density AND use the width.  Only above
+     1400px, where the nine-column table still clears its ~700px natural size. */
+  /* Between the point where the shell outgrows the tables and the point where
+     they pair, a stacked nine-column table spreads over ~1300px again.  The cap
+     holds them at the density they have everywhere else; it never binds once
+     paired, because a pane is narrower than this. */
+  #pending,#executed,#outstanding{max-width:1150px}
+  .pair{display:block}
+  @media (min-width:1440px){
+    .pair{display:flex;gap:34px;align-items:flex-start}
+    .pane{flex:1;min-width:0}
+    .pane h2:first-of-type{margin-top:0}
+  }
+  .note{font-size:13px;color:var(--muted);margin:0 0 8px}
+
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-bottom:4px}
+  th,td{padding:3px 8px;text-align:right;border-bottom:1px solid var(--rule);
+        white-space:nowrap}
+  /* Headers may wrap, data may not -- see journal.html for why. */
+  th{border-bottom:1px solid var(--rule-strong);font-weight:bold;text-align:right;
+     white-space:normal;vertical-align:bottom}
+  th.l,td.l{text-align:left}
+  .num{font-variant-numeric:tabular-nums}
+  .scroll{overflow-x:auto}
+  .stats td,.stats th{border:none;padding:2px 26px 2px 0;text-align:left}
+  .stats{width:auto;margin-bottom:14px}
+  .stats td:last-child{font-weight:bold}
+  /* The two source lines are subordinate to the total they decompose, so they
+     read as its parts rather than as two more headline figures. */
+  .stats tr.sub td{color:var(--muted);padding-top:0;padding-bottom:1px}
+  .stats tr.sub td:first-child{padding-left:20px}
+  .stats tr.sub td:last-child{font-weight:normal}
+  /* THIS OVERRIDE WAS WRITTEN AND NEVER FIRED.  The comment here used to say
+     `.stats tr.sub td` is (0,2,1); it is (0,2,2) -- two classes AND two
+     elements -- so it outranked `.stats td.pos` at (0,2,1) and the muted
+     colour won.  The three indented rows carried class="pos" and rendered
+     grey, and a sub-row that went NEGATIVE would have rendered grey too: a
+     loss with no red on it, which is the one direction this must never fail
+     in.  Repeating the sub-row selector with the sign class puts these at
+     (0,3,2), above both. */
+  .stats td.neg{color:var(--neg)}
+  .stats td.pos{color:var(--pos)}
+  .stats tr.sub td.neg{color:var(--neg)}
+  .stats tr.sub td.pos{color:var(--pos)}
+  figure{margin:0 0 18px}
+  figcaption{font-size:12px;color:var(--muted);margin-top:2px}
+  svg{display:block;width:100%;height:auto;border:1px solid var(--rule-strong);
+      cursor:crosshair}
+  footer{margin-top:34px;border-top:1px solid var(--rule-strong);padding-top:10px;
+         font-size:12.5px;color:var(--muted)}
+  code{font-size:12.5px}
+</style>
+</head>
+<body>
+
+<nav>
+  <a href="index.html"><b>Overview</b></a>
+  <a href="journal.html">Journal</a>
+  <a href="pnl.html">Daily P&amp;L</a>
+  <a href="mapping.html">Mapping</a>
+  <a href="qa.html">Q&amp;A</a>
+  <a href="expectations.html">Expectations</a>
+  <a href="https://github.com/Lucas-Joly-GH/trends-research">Source on GitHub</a>
+  <span class="stamp" id="stamp"></span>
+  <a class="contact" href="mailto:joly.lpro@gmail.com">joly.lpro@gmail.com</a>
+  <button type="button" id="theme" class="theme"></button>
+</nav>
+
+<h1>Systematic futures — 2026 paper-trading run</h1>
+<p class="sub" id="asof">Loading…</p>
+<p class="note stale" id="stale"></p>
+
+<div class="split">
+  <div class="col-l">
+    <p>A diversified trend-following book across 63 futures markets, run as a
+       paper portfolio from a $100m notional. Positions are sized to a 20%
+       annualised volatility target and rebalanced daily; orders are decided on
+       the close and execute at the next open.</p>
+    <p>This page is the live output of the pipeline behind my MSc thesis. It
+       shows what the book traded at this morning's open and what it will send
+       at the next one. The
+       <a href="journal.html">Journal</a> page has every session since
+       January.</p>
+
+    <h2>Summary</h2>
+    <table class="stats num" id="stats"></table>
+    
+  </div>
+
+  <div class="col-r">
+    <h2>NAV</h2>
+    <figure>
+      <svg id="wealth"></svg>
+      <figcaption id="wcap"></figcaption>
+    </figure>
+
+    <h2>Drawdown</h2>
+    <figure>
+      <svg id="ddown"></svg>
+      <figcaption id="dcap"></figcaption>
+    </figure>
+  </div>
+</div>
+
+<div class="pair">
+  <div class="pane">
+    <h2>Pending — to be sent at the next open</h2>
+    <p class="note" id="pnote"></p>
+    <div class="scroll"><table class="num" id="pending"></table></div>
+  </div>
+
+  <div class="pane">
+    <h2>Executed — filled at this open</h2>
+    <p class="note" id="enote"></p>
+    <div class="scroll"><table class="num" id="executed"></table></div>
+  </div>
+</div>
+
+<div id="outwrap" hidden>
+  <h2>Outstanding — given earlier, not yet filled</h2>
+  <p class="note">Carried because the market had no session. An order is given
+     once and carried until it fills.</p>
+  <div class="scroll"><table class="num" id="outstanding"></table></div>
+</div>
+
+<footer>
+  <div class="foot">
+   <div class="fcol">
+    <p class="note"><b>About the summary figures.</b></p>
+    <ol class="notes" id="notes"></ol>
+   </div>
+   <div class="fcol">
+  <p><b>Checking this yourself.</b> Each executed row shows the open it filled at
+     and the close it was decided on. Contract point values are on the
+     <a href="mapping.html">Mapping</a> page,
+     so <code>qty × (close − open) × pointsize × FX</code> reproduces the
+     position's move for the session.</p>
+  <p><b>Realised P&amp;L</b> is the share of a position's accumulated profit that
+     the trade on that row banked, not the position's move for the session. A
+     trade that adds to a position realises nothing; one that halves it realises
+     half of what the position had accrued; a close realises the rest. A winner
+     you are still holding therefore shows zero, and every dollar the book has
+     made is either realised on some row or still sitting in an open
+     position.</p>
+   </div>
+  </div>
+</footer>
+
+<script src="app.js?v=ee38815a"></script>
+<script>
+fetch(bust("data/latest.json")).then(r=>r.json()).then(d=>{
+  const m = d.meta;
+  el("asof").textContent =
+    `As of ${m.as_of}, ${m.sessions} sessions since ${m.window_start}.`;
+  el("stale").textContent = staleNote(m.as_of);
+
+  // "p.a." was doing too much work: it hid that the run is 171 sessions, not a
+  // year, and that the figure beside it is an ARITHMETIC annualisation which
+  // does not equal the total return grown out to twelve months.  Both rates are
+  // now named and both are shown.
+  //
+  // AND BOTH ARE NOW ON THE SAME BASIS.  The geometric line used to be
+  // `net_cagr`, the EQUITY curve's growth rate, which carries the interest the
+  // arithmetic line excludes by construction.  Side by side they read as a
+  // compounding effect -- 9.62% against 13.77% -- when 3.62pp of that 4.15pp
+  // gap was just the cash leg being in one number and not the other.  Both are
+  // trading-only now, the honest gap is 0.11pp, and the interest has its own
+  // line under the total where it cannot be mistaken for performance.
+  el("stats").innerHTML = [
+    // 4th flag = this figure is a GAIN, so a positive one earns green. Net
+    // asset value is a balance, volatility a magnitude and Sharpe a ratio --
+    // none of them is a gain, and painting them green would say they were.
+    // Negatives go red everywhere regardless; drawdown needs no flag.
+    ["Net asset value", "$"+fmtMoney(m.equity_end)],
+    [`Total return, ${m.sessions} sessions`, pct(m.equity_end/m.equity_start-1),
+     false, true],
+    ["from trading", pct(m.window_ret_trading), true, true, 1],
+    ["from interest on collateral", pct(m.window_ret_interest), true, true, 2],
+    ["Return, annualised (arithmetic)", pct(m.net_ann_ret), false, true, 3],
+    ["Return, annualised (geometric)", pct(m.cagr_trading), false, true, 4],
+    // THE SAME FIGURE ON THE OTHER BASIS, indented to say so. A full-return
+    // rate sitting as a PEER of the two above would reintroduce exactly the
+    // defect this box was fixed for: three annualised numbers, two bases, and
+    // no label saying which is which. As a sub-row it reads as what it is --
+    // the geometric rate again, with the cash leg put back.
+    ["with interest included", pct(m.net_cagr), true, true, 5],
+    ["Volatility, annualised", pct(m.net_ann_vol), false, false, 6],
+    ["Sharpe", floor2(m.net_sharpe), false, false, 7],
+    ["Maximum drawdown", pct(m.max_drawdown)],
+  ].map(([k,v,is_sub,signed,note])=>{
+    const sign = isNeg(v) ? "neg" : (signed && isPos(v)) ? "pos" : "";
+    // The marker goes on the LABEL, not the figure: a superscript beside a
+    // number reads as part of it, and this table is meant to be arithmetic a
+    // reader can do in their head.
+    const mark = note ? `<sup><a href="#n${note}">${note}</a></sup>` : "";
+    return `<tr${is_sub?' class="sub"':""}><td>${k}${mark}</td>`
+         + `<td${sign?` class="${sign}"`:""}>${v}</td></tr>`;
+  }).join("");
+
+  // ONE CLAIM PER NOTE, NUMBERED FROM THE ROW IT EXPLAINS.  This was a single
+  // paragraph carrying six separate arguments, and it had grown longer than the
+  // table it described -- so the thing a reader came for was framed by the
+  // thing they had to wade through. Moving it to the foot keeps every word and
+  // costs the summary nothing.
+  el("notes").innerHTML = [
+    `Net of commission. ${"$" + fmtMoney(m.cost_window_USD)} over these `
+    + `${m.sessions} sessions, ${pct(m.cost_window_USD/m.equity_start)} of the `
+    + `opening balance, running at ${pct(m.cost_ann)} a year at this trading `
+    + `pace. Every return on this page is after it.`,
+
+    `Income received, not a financing cost. Futures are unfunded — posting `
+    + `collateral is all the exposure costs — so the whole balance sits at the `
+    + `broker in bills, earning the Treasury rate at `
+    + `${pct(m.interest_ann)} a year. It is inside the net asset value but `
+    + `inside neither annualised rate.`,
+
+    `Trading only — after commission, before interest — which is the basis the `
+    + `volatility and the Sharpe use. The mean daily return scaled by 256.`,
+
+    `The same series compounded rather than averaged. Over a window this short `
+    + `the two differ by `
+    + `${(100*(m.cagr_trading-m.net_ann_ret)).toFixed(2)} points.`,
+
+    `That geometric figure with the cash leg put back — what the account `
+    + `actually compounded at. It sits `
+    + `${(100*(m.net_cagr - m.cagr_trading)).toFixed(2)} points above the row `
+    + `it indents under, and that gap is the interest.`,
+
+    `Average volatility not being at the 20% target is a feature, not a `
+    + `bug. Refer to the paper for the extended explanation; the short `
+    + `version is that the sigmoid gates are designed around always `
+    + `under-levering the portfolio, so that we do not do an LTCM 2.0.`,
+    `Divide the annualised arithmetic return by the annualised volatility: `
+    + `${pct(m.net_ann_ret)} / ${pct(m.net_ann_vol)} = `
+    + `${floor2(m.net_ann_ret / m.net_ann_vol)}, the figure shown. No `
+    + `risk-free rate is subtracted, because the return series carries no `
+    + `interest. At full precision it is ${m.net_sharpe}; the figure shown is `
+    + `rounded down, never up, so the rounding never flatters it.`,
+  ].map((t, i) => `<li id="n${i + 1}">${t}</li>`).join("");
+
+  el("pnote").textContent = d.pending.length
+    ? `${d.pending.length} orders, decided on ${m.as_of}'s close.`
+    : "Nothing to send.";
+  el("enote").textContent = d.executed.length
+    ? `${d.executed.length} orders, decided the previous session, filled this morning.`
+    : "Nothing filled.";
+
+  table(el("pending"),  d.pending,  [C.inst,C.con,C.side,C.qty,C.kind,C.close]);
+  table(el("executed"), d.executed, [C.inst,C.con,C.side,C.qty,C.kind,C.open,C.close,C.comm,C.real]);
+  if(d.outstanding && d.outstanding.length){
+    el("outwrap").hidden = false;
+    table(el("outstanding"), d.outstanding, [C.inst,C.con,C.side,C.qty,C.carry,C.reason]);
+  }
+  // The summary and its note ARE the left column's height, and they arrive on a
+  // different fetch than the charts. Whichever lands second does the balancing;
+  // `balance()` re-measures from the base height, so calling it twice is safe.
+  balance();
+}).catch(e=>{ el("asof").textContent = "Could not load data/latest.json — " + e; });
+
+// THE NAV CHART TAKES THE LEFTOVER COLUMN HEIGHT.  The prose and the summary
+// ran 79px longer than the two charts beside them at 1920px, and the slack is
+// not a constant: it grows as the viewport narrows, because a narrower left
+// column wraps to more lines while the charts beside it get shorter. A fixed
+// ratio is therefore right at exactly one width. Measuring is not circular here
+// -- the columns are independent flex items under `align-items:flex-start`, so
+// growing the right one cannot change the height of the left.
+const NAVSPEC = {r:0.27, min:260, max:330, extra:0};
+
+// Layout can still settle after both fetches resolve. One more pass on `load`
+// costs nothing and is idempotent -- `balance()` re-measures from the base
+// height, so a second call on an already-balanced page is a no-op.
+addEventListener("load", () => balance());
+
+function balance(){
+  const sp = document.querySelector(".split");
+  const L  = document.querySelector(".col-l");
+  const R  = document.querySelector(".col-r");
+  if (!sp || !L || !R || !CHARTS.wealth) return;
+  const redraw = () => lineChart("wealth", ...CHARTS.wealth);
+  // Always measure from the un-donated height, or each pass compounds the last.
+  if (NAVSPEC.extra) { NAVSPEC.extra = 0; redraw(); }
+  if (getComputedStyle(sp).display !== "flex") return;   // stacked: nothing to fill
+  const slack = L.getBoundingClientRect().height - R.getBoundingClientRect().height;
+  // 12px of slack is not worth a reflow; the cap stops a very tall left column
+  // just above the stacking breakpoint producing an absurd chart.
+  if (slack > 12) { NAVSPEC.extra = Math.min(Math.round(slack), 280); redraw(); }
+}
+
+fetch(bust("data/history.json")).then(r=>r.json()).then(h=>{
+  const d = h.daily;
+  const eq = d.map(r=>r.equity_USD), dd = d.map(r=>r.drawdown);
+  const lo = Math.min(...eq), hi = Math.max(...eq);
+  // {r, min, max}: the min reproduces the height the charts had at ~630px, the
+  // ratio takes over above that, the max stops a very wide monitor from turning
+  // the overview into two tall panels.
+  // The axis formatter is deliberately coarse -- "$115.6m" reads well on four
+  // gridlines. The hover formatter is the exact figure, which is the whole
+  // point of hovering.
+  // `split` -- the area is filled above and below the starting capital, so a
+  // glance says whether the book is up or down on the year without reading the
+  // axis. `ref` stays unset: the baseline it wants IS the first value.
+  lineChart("wealth", d, eq, lo, hi, NAVSPEC,
+            v=>"$"+(v/1e6).toFixed(1)+"m", false,
+            v=>"$"+fmtMoney(v), null, true);
+  lineChart("ddown",  d, dd, Math.min(...dd), 0, {r:0.17, min:170, max:215},
+            v=>(v*100).toFixed(1)+"%", true,
+            v=>(v*100).toFixed(2)+"%");
+
+  const k = dd.indexOf(Math.min(...dd));
+  el("wcap").textContent =
+    `Net asset value, ${d[0].date} to ${d[d.length-1].date}. `
+    + `$${fmtMoney(eq[0])} to $${fmtMoney(eq[eq.length-1])}.`;
+  el("dcap").textContent =
+    `Peak-to-trough on net asset value, after costs and interest. `
+    + `Deepest ${pct(dd[k])} on ${d[k].date}; currently ${pct(dd[dd.length-1])}.`;
+  // AFTER the captions: they are two lines of the right column's height, and
+  // balancing without them measured a column 40px shorter than it ends up.
+  afterCharts = balance;
+  balance();
+});
+</script>
+</body>
+</html>
