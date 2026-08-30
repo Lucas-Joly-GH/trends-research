@@ -87,3 +87,6 @@ Live/.pipeline_run.json
 
 # front_contract.py regenerates this, and it carries vendor prices.
 Live/1_Roll/Front_Contract/worksheet.csv
+
+# Scheduled-run logs and status markers. Local only.
+Live/logs/
