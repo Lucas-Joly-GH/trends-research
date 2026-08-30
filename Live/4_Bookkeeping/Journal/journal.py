@@ -1,95 +1,3 @@
-"""
-The order journal.  Append-only, written once, never recomputed.
-
-    journal.py                     append today's pending orders
-    journal.py --date 2026-08-24   append as if that were today
-    journal.py --fills             resolve fills for orders whose open has come
-    journal.py --status            what the store holds
-    journal.py --verify            checksums, gaps, duplicate ids, orphan fills
-    journal.py --replay 2026-08-24 the orders for a session, with provenance
-    journal.py --backfill          replay every session in the ledger, in order
-    journal.py --outstanding DATE  the open book at that close: given earlier,
-                                   still unfilled, and why
-    journal.py --drift             journal vs today's derived ledger (a report)
-    journal.py --reset             destroy the store  (test mode only)
-
-------------------------------------------------------------------------------
-WHY THIS EXISTS AT ALL, GIVEN 4_Bookkeeping ALREADY HAS A LEDGER
-------------------------------------------------------------------------------
-
-`Orders.csv` is DERIVED: recomputed from Positions on every run, nothing ever
-read back.  That is right for research -- the same panel gives the same orders,
-always -- and useless as a record, because an order that was transmitted is a
-historical fact and a derived file cannot hold one.
-
-Measured on a single day of ordinary work (2026-08-29), on an unchanged panel
-and an unchanged window, the derived ledger went 4,322 -> 4,305 orders across
-three fixes: a float-rounding noise floor in 3.20, commission on both roll legs,
-and open execution.  Seventeen orders that existed that morning did not exist
-that evening, and every survivor was recomputed rather than recalled.  The 3.36
-buffer is what makes it a cascade rather than a patch: N[t] holds unless the
-target has moved 10% from N[t-1], so one perturbed session re-derives every
-position after it.  A rounding fix on 86 bars in the 1990s reached 2026.
-
-So: send BUY 18 on Monday, fix a bug on Tuesday, and the ledger now says Monday
-was BUY 22.  The broker says 18.  Nothing can explain the 18, because the
-SIGNAL, sigma$, NAV, IDM and gate values that produced it were never written
-down.  That is the hole this file closes.
-
-------------------------------------------------------------------------------
-TWO STORES, BECAUSE AN IMMUTABLE ROW CAN ONLY HOLD WHAT WAS KNOWN
-------------------------------------------------------------------------------
-
-On the evening of t you know the order and every input that produced it.  You do
-NOT know the fill price -- the open of t+1 has not happened -- nor, at the live
-edge, the fill date.  Forcing either into the order row forces a mutation, which
-defeats the point.
-
-    orders/YYYY/DATE.parquet   the decision + its provenance, write-once
-    fills/YYYY/DATE.parquet    what actually happened, written later
-
-`execute_at` is exact for every past session (the instrument's own bar history
-IS its trading calendar, unscheduled closures included -- 6A rolled 2001U->2001Z
-across the 9/11 closure and the data knows it).  At the live edge it is NULL,
-meaning "the next session this market opens, whenever that is".  A calendar
-library was considered and rejected: `exchange_calendars` needs pandas, which
-this project excludes, and has no calendar for ICE Futures Europe, ICE Canada or
-Montreal -- 10 of our 63 instruments -- while its holidays are user-contributed
-with no guarantee back to 1978.  It would be a guess where the fill record gives
-a fact one morning later.
-
-------------------------------------------------------------------------------
-ONE FILE PER SESSION, AND A MODE FLAG
-------------------------------------------------------------------------------
-
-Immutability is a property of the filesystem here, not of anyone's discipline:
-writing tomorrow never opens today's file, a crash can only damage one day, and
-`_checksums.jsonl` turns "has this been altered" into a question with an answer.
-
-`MANIFEST.json` carries `mode`, and it is THREE states, not two, because the
-two properties it governs are independent:
-
-    mode     wipeable   modelled fills   what it is
-    test        yes          yes         development; re-baselined freely
-    paper       NO           yes         a forward record, filled by model
-    live        NO           NO          a forward record, filled by a broker
-
-`test` and `live` alone could not describe this project.  A paper-trading track
-must not be wipeable -- an erasable forward record records nothing, because it
-can always be made to agree with today's model -- but it has no broker, so its
-fills ARE modelled and always will be.  Forced to choose, it stayed `test`, and
-the thing that most needed protecting was the thing left deletable.  `paper` is
-that state named.
-
-`--promote` moves test -> paper -> live and REFUSES to go back: the direction is
-the whole point, since each step removes a permission.  A `test` store can be
-wiped with `--reset`; a
-`live` store refuses and tells you to move the directory by hand.  Flipping that
-one word is the moment deletion stops being easy, which is exactly when it
-should.  `--fills` also refuses to write MODELLED fills into a live store: they
-assume execution at exactly the next open, which is the paper's documented
-limitation and not something that may ever be mistaken for a broker's report.
-"""
 from __future__ import annotations
 
 import argparse
@@ -120,19 +28,8 @@ FILLS = HERE / "fills"
 SUMS = HERE / "_checksums.jsonl"
 SCHEMA_VERSION = 1
 
-# The nine inputs to 3.32, frozen beside the order.  N_raw and N_target are
-# derivable from the other seven plus the constants and are kept anyway: they
-# are what let a row explain itself without re-running anything, which is the
-# entire purpose of the store.
 PROV = ["SIGNAL", "price_vol_USD_ann", "s_g_vol", "s_g_dd", "w_i", "IDM",
         "NAV", "N_raw", "N_target"]
-# THE CONTEXT A ROW WAS WRITTEN IN, WHICH IS NOT PART OF THE DECISION.
-# `code_commit`, `panel_edge` and `cycles_fingerprint` record WHEN and under
-# what a row was produced.  They are evidence about the act, not claims about
-# the order, and the difference matters for what counts as a conflict: compared
-# as though they were the decision, every rerun after any commit disagreed with
-# a store whose orders were byte-identical.  A warning that always fires is one
-# nobody reads, which costs more than the warning was ever worth.
 CONTEXT = ["code_commit", "panel_edge", "cycles_fingerprint", "written_at"]
 DECISION = (["order_id", "decision_date", "execute_at", "instrument",
              "contract", "action", "quantity", "kind", "position_before",
@@ -140,16 +37,6 @@ DECISION = (["order_id", "decision_date", "execute_at", "instrument",
 ORDER_COLS = DECISION + CONTEXT
 FILL_COLS = ["order_id", "filled_at", "fill_price", "fill_qty", "status",
              "source", "written_at"]
-# The open book at the close of a session: orders GIVEN earlier that have still
-# not filled.  Not a re-issue -- `orders/` holds the one row that says the order
-# was given -- but a nightly statement of what is still outstanding and why.
-# `own_sessions_since` is how many sessions THIS MARKET has opened since the
-# order was given -- 0 is what justifies MARKET_CLOSED, and anything above 0
-# means it had a chance to fill and did not, which is UNEXPLAINED here and a
-# real question on a live desk.  `carried_sessions` is how many evenings the
-# order has appeared in this book, which is the "how long has this been sitting"
-# a reader actually wants.  Two different numbers; the first version conflated
-# them under one misleading name.
 OUTST_COLS = ["order_id", "as_of", "decision_date", "instrument", "contract",
               "action", "quantity", "own_sessions_since", "carried_sessions",
               "reason", "written_at"]
@@ -171,18 +58,10 @@ def _sha(p: Path) -> str:
 
 
 def order_id(decision_date: str, instrument: str, contract: str) -> str:
-    """Stable across rebuilds, so journal and derived ledger join cleanly.
-
-    The triple is the key `verify_bookkeeping` already proves unique across the
-    whole ledger, so hashing it cannot collide on anything the pipeline emits.
-    """
     return hashlib.sha256(
         f"{decision_date}|{instrument}|{contract}".encode()).hexdigest()[:16]
 
 
-# ---------------------------------------------------------------------------
-# store
-# ---------------------------------------------------------------------------
 def manifest() -> dict | None:
     if not MANIFEST.is_file():
         return None
@@ -198,12 +77,6 @@ MODES = ["test", "paper", "live"]
 
 
 def promote(to: str) -> int:
-    """Move the store one way along test -> paper -> live.
-
-    ONE WAY, BY DESIGN.  Every step removes a permission, and a command that
-    could hand a permission back is a command that can quietly undo the
-    protection somebody thought they had turned on.
-    """
     m = manifest()
     if m is None:
         print("  no store to promote")
@@ -216,13 +89,6 @@ def promote(to: str) -> int:
         print(f"  [REFUSED] store is '{cur}'; '{to}' is not forward of it. "
               f"Promotion is one way.")
         return 1
-    # A NON-WIPEABLE STORE THAT GIT IGNORES LIVES ON ONE DISK.  The whole
-    # value of this directory is that it cannot be rewritten, and a copy that
-    # exists nowhere else cannot be rewritten OR recovered -- the failure it
-    # exists to prevent, arriving by a different route.  While the store is
-    # `test` that is fine, because it is disposable and gets re-baselined after
-    # every model change.  Promotion is the exact moment it stops being fine,
-    # so the check lives here rather than in a note somebody reads later.
     if to not in WIPEABLE:
         import subprocess
         ignored = subprocess.run(
@@ -277,7 +143,7 @@ def _sums() -> dict[str, dict]:
     for line in SUMS.read_text(encoding="utf-8").splitlines():
         if line.strip():
             r = json.loads(line)
-            out[r["path"]] = r          # last write wins; --verify flags rewrites
+            out[r["path"]] = r
     return out
 
 
@@ -303,18 +169,8 @@ def _run_ids() -> dict:
             "cycles_fingerprint": fp}
 
 
-# ---------------------------------------------------------------------------
-# append
-# ---------------------------------------------------------------------------
 def build_rows(asof: str | None, led=None, tb=None,
                prov_cache: dict | None = None) -> tuple[str, pl.DataFrame]:
-    """The pending orders as of a session, enriched with their provenance.
-
-    PENDING COMES FROM `bookkeeping.views`, not from a second implementation of
-    the same rule.  The whole argument for this file is that a record must not
-    be re-derived; re-deriving the SELECTION would be the same mistake one level
-    up.
-    """
     bk = _load(BK / "bookkeeping.py", "bk")
     if led is None:
         tb = tb or _load(BOOK_PY, "tb")
@@ -328,9 +184,6 @@ def build_rows(asof: str | None, led=None, tb=None,
     pend, _exe = bk.views(led, asof)
 
     ids = _run_ids()
-    # Provenance lookup, cached per instrument across a batch.  Reading 63
-    # Positions files once per SESSION is O(N^2) and turns a 9,522-session
-    # backfill into hours; read them once and index by date.
     if prov_cache is None:
         prov_cache = {}
     prov: dict[str, dict] = {}
@@ -372,16 +225,6 @@ def append(asof: str | None) -> int:
     ensure_store()
     date, df = build_rows(asof)
     p = _path(ORDERS, date)
-    # ONE ORDER IS RECORDED ONCE, ON THE DAY IT IS FIRST SEEN.
-    #
-    # `pending` carries an unfilled order forward: a market shut for four days
-    # shows the same order on all four evenings, because it still has not
-    # filled.  That is right for the view -- it is what you would send -- and
-    # wrong for a record, which would then hold the same order_id four times.
-    # Measured on this window: 93 of 4,305 orders appear on more than one
-    # session, HSI's 2026-02-16 order across the whole Lunar New Year closure.
-    # The August replay that first tested this file contained no multi-day
-    # closure and never triggered it.
     known = set()
     for q in sorted(ORDERS.glob("*/*.parquet")):
         if q == p:
@@ -397,14 +240,6 @@ def append(asof: str | None) -> int:
         print(f"  {date}: nothing newly given")
         return 0
     if p.is_file():
-        # IDENTICAL IS A NO-OP, DIFFERENT IS A CONFLICT.  Never a rewrite: the
-        # file is the record of what was sent, and a rerun that disagrees is
-        # information about the pipeline, not a correction to history.
-        #
-        # "DIFFERENT" MEANS THE DECISION.  A row written at one commit IS the
-        # record of what was sent, which is exactly why it is not overwritten
-        # when the same decision is rebuilt at another -- and equally why that
-        # is not a disagreement.  Context drift is reported, never fatal.
         old = pl.read_parquet(p)
         a = old.drop(CONTEXT).sort("order_id")
         b = df.drop(CONTEXT).sort("order_id")
@@ -438,15 +273,6 @@ def append(asof: str | None) -> int:
 
 
 def _write_outstanding(date: str, carried: pl.DataFrame) -> None:
-    """Tonight's open book: given earlier, still not filled, and why.
-
-    THE REASON IS RECORDED, NOT INFERRED.  "The market was shut" can be
-    recovered from the bars afterwards; "the broker rejected it" or "we chose
-    not to send" cannot.  Those are facts about one evening and nowhere else,
-    which is the whole argument for writing them down at the time.  Only
-    MARKET_CLOSED can arise from a modelled run -- the others are here so the
-    schema does not have to change the first time a real desk uses it.
-    """
     tb = _load(BOOK_PY, "tb")
     prior = read_all(OUTST)
     seen: dict[str, int] = {}
@@ -459,8 +285,6 @@ def _write_outstanding(date: str, carried: pl.DataFrame) -> None:
         b = tb.load_book(inst).select(["date"])
         own = [x for x in b.get_column("date").to_list()
                if r["decision_date"] < x <= date]
-        # Sessions this market has actually opened since the order was given.
-        # None means it has had no chance to fill; any means it should have.
         reason = "MARKET_CLOSED" if not own else "UNEXPLAINED"
         rows.append([r["order_id"], date, r["decision_date"], inst,
                      r["contract"], r["action"], r["quantity"],
@@ -489,17 +313,7 @@ def _write_outstanding(date: str, carried: pl.DataFrame) -> None:
           + "  ".join(f"{k} {v}" for k, v in sorted(by.items())))
 
 
-# ---------------------------------------------------------------------------
-# fills
-# ---------------------------------------------------------------------------
 def resolve_fills(asof: str | None) -> int:
-    """Record the fill for every journalled order whose open has now happened.
-
-    MODELLED, NOT OBSERVED.  `fill_price` is the raw open of the fill session
-    and `fill_qty` the whole order -- exactly the paper's assumption, execution
-    at the next open with no slippage and no partial.  `source=modelled` says
-    so, and a live store refuses these outright.
-    """
     m = ensure_store()
     if m.get("mode") not in MODELLED_FILLS_OK:
         print(f"  [REFUSED] modelled fills may not be written to a "
@@ -524,8 +338,6 @@ def resolve_fills(asof: str | None) -> int:
             books[inst] = {"dates": d, "open": b.get_column("open").to_list(),
                            "ix": {x: k for k, x in enumerate(d)}}
         bk = books[inst]
-        # The fill session is this market's next OWN session after the
-        # decision -- resolved from the bars now, not from a stored guess.
         k = bk["ix"].get(r["decision_date"])
         if k is None or k + 1 >= len(bk["dates"]):
             continue
@@ -567,9 +379,6 @@ def _fill_schema() -> dict:
             for c in FILL_COLS}
 
 
-# ---------------------------------------------------------------------------
-# read / report
-# ---------------------------------------------------------------------------
 def read_all(kind: Path) -> pl.DataFrame:
     fs = sorted(kind.glob("*/*.parquet")) if kind.is_dir() else []
     if not fs:
@@ -661,12 +470,6 @@ def verify() -> int:
         if nulls:
             print(f"  [FAIL] provenance never populated: {nulls}")
             bad += 1
-        # A GAP is a journalled-range session with no file: the store claims a
-        # continuous record and one day is absent.
-        # A SESSION WITH NO ORDERS IS NOT A GAP.  Good Friday sits in the panel
-        # grid and decides nothing anywhere; flagging it teaches the reader to
-        # ignore the warning, which is how a real gap gets ignored too.  So the
-        # comparison is against sessions the DERIVED LEDGER shows orders on.
         d = sorted(set(o.get_column("decision_date").to_list()))
         led_f = BK / "Orders.parquet"
         if led_f.is_file():
@@ -683,8 +486,6 @@ def verify() -> int:
         if orph:
             print(f"  [FAIL] {len(orph)} outstanding row(s) with no given order")
             bad += 1
-        # An outstanding row must POST-DATE the order it carries: it is the
-        # statement that something given earlier has still not filled.
         late = sum(1 for r in u.iter_rows(named=True)
                    if r["as_of"] <= r["decision_date"])
         if late:
@@ -705,10 +506,6 @@ def verify() -> int:
             bad += 1
         q = dict(zip(o.get_column("order_id").to_list(),
                      o.get_column("quantity").to_list()))
-        # ORPHANS ARE ALREADY REPORTED ABOVE and must not be counted twice: a
-        # missing order looks up as quantity 0, so every orphan fill would also
-        # register as "exceeds the order".  Two errors for one fault trains the
-        # reader to skim.
         over = sum(1 for r in f.iter_rows(named=True)
                    if r["order_id"] in q
                    and r["fill_qty"] > q[r["order_id"]] + 1e-9)
@@ -736,18 +533,6 @@ def replay(date: str) -> int:
 
 
 def backfill(since: str | None = None) -> int:
-    """Replay every session in the derived ledger into the store, in order.
-
-    THE SAME CODE PATH AS A NIGHTLY APPEND, just carrying its state in memory.
-    `append()` rebuilds the ledger, rescans every stored file for known ids and
-    re-reads the outstanding book on each call -- all O(N) per session, which is
-    invisible at one session a night and quadratic over 9,522 of them.  A
-    backfill that took a different path would be testing different code, so this
-    holds the caches and calls the same builders.
-
-    Existing days are skipped, not rewritten: a backfill over a partially
-    populated store tops it up rather than arguing with it.
-    """
     ensure_store()
     t0 = time.time()
     bk = _load(BK / "bookkeeping.py", "bk")
@@ -827,18 +612,6 @@ def backfill(since: str | None = None) -> int:
 
 
 def drift() -> int:
-    """Journal versus today's derived ledger.  A REPORT, never a failure.
-
-    These two disagree whenever the pipeline changes, which is whenever anyone
-    fixes anything -- three times on 2026-08-29 alone.  Making that turn a
-    report red would put the pipeline red on every ordinary working day, and
-    the check would be switched off inside a month.  So it counts and shows.
-
-    The precedence it exists to make visible:
-        what did we SEND?      the journal.  always.
-        what should we HOLD?   the derived ledger.
-        do we hold it?         neither -- reconcile against the broker.
-    """
     o = read_all(ORDERS)
     if not o.height:
         print("  journal is empty")
@@ -864,10 +637,6 @@ def drift() -> int:
         else:
             same += 1
     jd = set(o.get_column("decision_date").to_list())
-    # HOIST THE SET.  Building it inside the comprehension rebuilds a
-    # 191,445-element set once per candidate -- invisible on the 4,305-order
-    # test window, a ten-minute timeout on the full history.  The kind of thing
-    # only a bigger sample finds.
     jids = set(o.get_column("order_id").to_list())
     extra = sum(1 for k, c in now.items()
                 if c["decision_date"] in jd and k not in jids)

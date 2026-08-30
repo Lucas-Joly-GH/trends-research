@@ -1,26 +1,3 @@
-"""
-Audit the published track using ONLY what is published.
-
-    python Live/5_Publish/verify_track.py
-
-NO PANEL, NO ENGINE, NO PIPELINE, AND NO DEPENDENCIES.  Standard library only,
-reading nothing but `docs/` and `Live/instrument_mapping.csv` -- both of which
-are in the repository.  That is the entire point: this is the check an outside
-reader can run on a clean checkout, which is what makes the published figures
-something other than an assertion.
-
-HOW THIS DIFFERS FROM `verify_publish` IN Update.py.  That one asks whether the
-site agrees with the PIPELINE, and needs the parquet files to answer -- which
-are not in the repository and never will be.  This one asks whether the site
-agrees with ITSELF: does the arithmetic close, does the equity chain join up,
-does the headline match the series behind it.  A stale publish passes this and
-fails that; a corrupted publish fails both.  Neither replaces the other, and
-only this one can run anywhere.
-
-WHAT A FAILURE HERE MEANS.  Not "the strategy is wrong" -- this proves nothing
-about the model.  It means the published record contradicts itself, which is
-the one defect that would make every other number on the site unreadable.
-"""
 from __future__ import annotations
 
 import ast
@@ -38,11 +15,8 @@ PAGES = ["index.html", "journal.html", "pnl.html", "mapping.html",
          "qa.html"]
 FORBIDDEN = ["norgate"]
 
-# Tolerances are the PUBLISHED ROUNDING, not a fudge.  Money is written to the
-# cent, so a figure derived from 63 of them can sit a few cents from a figure
-# rounded once; `history.json` rounds independently of the per-session books.
 TOL_CENTS = 0.01
-TOL_SUM = 1.0           # 63 instruments, each rounded to the cent
+TOL_SUM = 1.0
 results: list[tuple[bool, str, str]] = []
 
 
@@ -62,7 +36,6 @@ def main() -> int:
         ok("docs/data exists", False, f"not found at {DATA}")
         return report()
 
-    # ---- 1. everything the site promises is present and parses -------------
     tops = ["latest.json", "history.json", "index.json", "pnl_index.json",
             "mapping.json", "qa.json"]
     got = {n: load(n) for n in tops}
@@ -97,14 +70,12 @@ def main() -> int:
         return report()
     dates = [x["date"] for x in pidx]
 
-    # ---- 2. each sheet adds up to its own book -----------------------------
     off = [(d, abs(sum(i["gross_pnl_USD"] for i in books[d]["instruments"])
                    - books[d]["book"]["gross_pnl_USD"])) for d in dates]
     worst = max(off, key=lambda t: t[1])
     ok("every attribution sheet sums to its own book",
        worst[1] <= TOL_SUM, f"worst {worst[1]:.3f} on {worst[0]}")
 
-    # ---- 3. the balance sheet closes, every session ------------------------
     def walk(d):
         b = books[d]["book"]
         return abs(b["opening_equity_USD"] + b["gross_pnl_USD"]
@@ -114,11 +85,6 @@ def main() -> int:
     ok("opening + gross - commission + interest == closing",
        worst[1] <= TOL_CENTS, f"worst {worst[1]:.2e} on {worst[0]}")
 
-    # ---- 4. THE CHAIN.  One session's close is the next one's open ---------
-    #
-    # The check a fabricated track fails.  Individually plausible sessions can
-    # each close perfectly and still not join up; this insists the equity curve
-    # is one object rather than 171 unrelated statements.
     breaks = [(b, abs(books[a]["book"]["closing_equity_USD"]
                       - books[b]["book"]["opening_equity_USD"]))
               for a, b in zip(dates, dates[1:])]
@@ -127,7 +93,6 @@ def main() -> int:
        worst[1] <= TOL_CENTS,
        f"{len(breaks)} joins, worst {worst[1]:.2e} on {worst[0]}")
 
-    # ---- 5. the curve agrees with the sessions behind it -------------------
     H = {r["date"]: r for r in hist["daily"]}
     ok("history covers exactly the published sessions",
        set(H) == set(dates), f"{len(H)} rows vs {len(dates)} sessions")
@@ -146,7 +111,6 @@ def main() -> int:
         ok("history.json agrees with every session's book",
            worst_all <= TOL_CENTS, f"worst {worst_all:.2e} on {worst_at}")
 
-    # ---- 6. the headline is the series it came from ------------------------
     m = latest["meta"]
     last = hist["daily"][-1]
     diffs = []
@@ -160,10 +124,6 @@ def main() -> int:
        f"{m['as_of']}  {m['sessions']} sessions  {m['equity_end']:,.2f}"
        if not diffs else "  ".join(diffs))
 
-    # ---- 7. the contract specs are well formed and obey the cost model -----
-    #
-    # `cost_rt` is one tick plus a fee floor, so it can never be at or below a
-    # single tick.  That is the published cost methodology stated as a test.
     bad = [r["instrument"] for r in mapping
            if not (r["pointsize"] > 0 and r["tick_size"] > 0
                    and r["cost_rt_local"] > r["tick_size"] * r["pointsize"])]
@@ -174,7 +134,6 @@ def main() -> int:
     ok("mapping.json covers the whole instrument file",
        csv_n == len(mapping), f"{len(mapping)} published vs {csv_n} in the csv")
 
-    # ---- 8. the pages agree on which assets they are loading --------------
     stamps = set()
     for name in PAGES:
         f = DOCS / name
@@ -187,21 +146,6 @@ def main() -> int:
     ok("all pages load the same asset version", len(stamps) == 1,
        f"{sorted(stamps)}")
 
-    # ---- 9. the pages and the payload agree on the key names --------------
-    #
-    # THE ONE FAILURE NEITHER OTHER SUITE CATCHES.  Rename a key in
-    # `publish.py` and not in `app.js` and everything still passes: the JSON is
-    # valid, the whitelist is satisfied, the arithmetic reconciles -- and the
-    # page renders "undefined" because it is asking for a name nobody publishes
-    # any more.  Structure and arithmetic are both fine; only the CONTRACT
-    # between the two files is broken.
-    #
-    # The vocabulary is taken from what publish.py PROMISES, not from what
-    # today's data happens to contain: `carried_sessions` is a declared column
-    # that vanishes from the payload whenever no order is outstanding, and
-    # reading only the JSON would call that a break.  Parsed with `ast` rather
-    # than imported, because importing it would drag in polars and this suite
-    # is dependency-free on purpose.
     vocab = set()
     def _keys(o):
         if isinstance(o, dict):
@@ -235,8 +179,6 @@ def main() -> int:
 
     src = "".join((DOCS / f).read_text(encoding="utf-8")
                   for f in ["app.js"] + PAGES)
-    # The JSON-reading idiom in these pages is a property off a single-letter
-    # object (`r.instrument`, `m.equity_end`, `b.gross_pnl_USD`).
     refs = set(re.findall(r"[^A-Za-z0-9_]([a-z])[.]([A-Za-z_][A-Za-z0-9_]*)", src))
     names = {n for _, n in refs}
     looks_published = {n for n in names if "_" in n or n in vocab}
@@ -245,12 +187,6 @@ def main() -> int:
        f"{len(looks_published)} keys read, {len(vocab)} declared across "
        f"{declared} lists" + (f"   ORPHANS: {orphan}" if orphan else ""))
 
-    # ---- 9b. the Q&A payload agrees with the track it describes ------------
-    #
-    # The largest payload on the site and, until this check, the only one
-    # nothing verified. Presence is not enough: its benchmark curve is an
-    # independent reconstruction of the same equity, so if it disagrees with
-    # `latest.json` one of the two is describing a different run.
     qa = got.get("qa.json") or {}
     bc = qa.get("bench_curves") or []
     diffs = []
@@ -265,7 +201,6 @@ def main() -> int:
        f"{len(bc)} sessions, {npos} positions" if not diffs
        else "  ".join(diffs))
 
-    # ---- 10. the carve-out holds ------------------------------------------
     hits = []
     for f in DOCS.rglob("*"):
         if f.is_file():

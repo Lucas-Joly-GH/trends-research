@@ -1,86 +1,3 @@
-"""
-Run the nightly pipeline, in order, and stop at the first failure.
-
-    python Update.py                  start NDU, refresh the panel, rebuild books
-    python Update.py --no-ndu         assume NDU is already up to date
-    python Update.py --dry-run        print the commands, run nothing
-    python Update.py --jobs N         override the worker count (default 2)
-    python Update.py --skip-refresh   books only, reuse the panel on disk
-    python Update.py --no-bookkeeping stop after the positions, skip the ledger
-    python Update.py --no-reconcile   skip the primary-source reconciliation
-
-`front_contract.py` IS A LIBRARY, NOT A STAGE, which is the one thing the
-directory listing gets wrong.  contract_cycles and trading_book both load it
-with `_load(FC, "fc")` and call into it -- the former for roll scores, the²
-latter for worksheets.  Its own main() defaults to a fortnight of ZC in 1989 and
-prints fourteen rows; running it here would refresh nothing and prove nothing.
-
-    0. ndu.trigger.exe      starts the Norgate Data Updater if it is down and
-                            asks it to fetch.  Stage 1 needs NDU running, so an
-                            unattended run would otherwise die because an app
-                            was closed.  See ensure_ndu for why the wait works
-                            the way it does.
-    1. contract_cycles.py   pulls from the vendor, decides each market's roll
-                            rule, writes contract_cycles.csv.  THIS IS THE ONLY
-                            STAGE THAT NEEDS NDU.
-    2. trading_book.py      builds the 63 books off that panel, and the 7 FX
-                            conversion rates alongside them.
-    3. portfolio.py         turns the forecasts into contracts (eq 3.32/3.33).
-                            Sequential: NAV compounds, so position -> P&L ->
-                            NAV -> next position cannot be vectorised.
-    4. bookkeeping.py       differences those positions into ORDERS, and splits
-                            them into what filled at this open and what to send
-                            for the next.  Reads nothing but stage 3; ~1s.
-    5. publish.py           writes docs/data for the public site.  RUNS LAST,
-                            AFTER VERIFICATION, AND ONLY ON A CLEAN FULL RUN --
-                            it reads the run stamp this file writes and will not
-                            publish off a failed or partial pipeline.  Skipped,
-                            not failed, when the run is not fit to publish from;
-                            the site then keeps its last verified numbers.
-                            Pushing stays manual: this writes files, it does not
-                            deploy.
-
-VERIFICATION IS NINE REPORTS, NOT ONE.  `verify_cycles` and `verify_holds`
-cover stage 1; `verify_books` the books; `verify_fx` the conversion rates;
-`verify_irx` the risk-free rate; `verify_portfolio` the positions;
-`verify_bookkeeping` the order ledger; `verify_stages` asks the question none of
-the others can -- do the artifacts AGREE WITH EACH OTHER;
-`verify_reconciliation` asks the one question even THAT cannot, because a
-consistent misreading of the panel passes every check that only compares derived
-files: does the money still add up against the BOOKS, the mapping and IRX.
-And `verify_publish` covers the one stage whose own guards all run BEFORE it
-writes: it is the only report that opens `docs/` and reads back the bytes a
-reader will be served.  It cannot check the live site, because the push is
-manual by design and the directory is supposed to run ahead of the deployment.
-That last one exists because a stale file passes its own report effortlessly:
-yesterday's FX table is sorted, non-null, correctly typed and internally
-consistent.  What it is not is the table the books were built against.
-The rates get their own report because THEY FAIL DIFFERENTLY: a book that goes
-wrong usually goes visibly wrong -- a column empties, a schema drifts, a date
-stops advancing -- whereas a conversion rate that goes wrong stays perfectly
-well-formed and simply carries the wrong number, with every position sized off
-it then wrong by that factor and nothing anywhere reading as an error.  So
-verify_fx is weighted toward VALUE plausibility (session-move ceiling, the USD
-identity, the HKD peg) where verify_books is weighted toward structure.
-
-`verify_bookkeeping` is a third shape again: it REPLAYS.  An order ledger cannot
-be checked against itself in any useful way, because it is derived from the
-positions and every arithmetic identity inside it holds by construction.  So the
-report applies all 191,000 orders in sequence from flat and insists the book
-lands on `N_contracts` on all 450,000 instrument-sessions.  That is the only
-check that would have caught the 578 rolls an earlier version collapsed into
-resizes -- well-formed rows, right instrument, right date, plausible size.
-
-ORDER MATTERS AND IS NOT INTERCHANGEABLE.  Stage 2 reads `Roll_Rule` from the
-CSV stage 1 writes, and its worksheet cache is keyed on that file's bytes -- so
-a panel refresh correctly invalidates every cached worksheet.  Running them the
-other way round would rebuild the books against yesterday's rules and look
-entirely successful.
-
-A STAGE THAT FAILS STOPS THE RUN.  Stage 2 on a half-written panel would
-produce books that are wrong rather than absent, and absent is the failure that
-gets noticed.
-"""
 from __future__ import annotations
 
 import argparse
@@ -95,47 +12,11 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# platform.node() returns the machine name, and this machine is called
-# "Napoleon" WITH AN ACUTE ACCENT.  norgatehelper.py line 44 puts it straight
-# into an HTTP header:
-#
-#     session.headers.update({"Client": platform.node()})
-#
-# HTTP headers must be ASCII, so NDU rejects the request with 400 and an empty
-# body.  norgatedata's import-time probe then does:
-#
-#     statusmsg = r.content.decode()
-#     if statusmsg != 'OK': logger.error(statusmsg)
-#
-# -- it logs the response BODY, which is empty.  That is the whole of the
-#    "ERROR: Norgate Data: " with nothing after it, on every import, forever.
-#    Nothing was truncated; there was never a message.
-#
-# Isolated and reproducible:
-#     no Client header        -> 200 OK
-#     Client "Napoleon"       -> 200 OK
-#     Client platform.node()  -> 400, empty body
-#
-# The error is harmless because every real call afterwards strips the headers
-# to ASCII.  It is the probe that runs BEFORE our code gets control that fails,
-# which is exactly why patching has to happen here, before the import.
-#
-# THIS ONLY COVERS THIS PROCESS.  Stages 1 and 2 are separate interpreters that
-# import norgatedata themselves, and platform.node() does not read COMPUTERNAME
-# on Windows, so the environment cannot carry the fix to them.  Stage 1 will
-# still print the line until the same patch is added there -- or until the
-# machine is renamed, which fixes it everywhere at once and is the real cure.
-# ---------------------------------------------------------------------------
 _NODE = platform.node()
 if not _NODE.isascii():
     platform.node = lambda _n=_NODE.encode("ascii", "ignore").decode(): _n
 
 HERE = Path(__file__).resolve().parent
-# WHEN THE DATA WAS LAST REBUILT, which is not the same as when anything was
-# last published.  The site's "Updated" line is this timestamp: a reader wants
-# to know how fresh the NUMBERS are, and re-running the publisher on week-old
-# data must not make them look newer than they are.
 RUN_STAMP = HERE / ".pipeline_run.json"
 CYCLES = HERE / "1_Roll" / "contract_cycles.py"
 BOOK = HERE / "2_Engine" / "trading_book.py"
@@ -145,13 +26,9 @@ JOURNAL = HERE / "4_Bookkeeping" / "Journal" / "journal.py"
 PUBLISH = HERE / "5_Publish" / "publish.py"
 
 
-# A stage prints one line per instrument.  That is 63 lines of noise around the
-# handful that matter -- the panel edge, the roll warnings, the hole report.
-# The bar COLLAPSES those and passes everything else through untouched, so
-# nothing is hidden; it is a filter on repetition, not on information.
 _ROW = re.compile(r"^\S+\s+\S*roll\S*\s")
-_SPIN = "|/-" + chr(92)          # avoids a literal backslash here
-_CR = chr(13)                    # ditto for the carriage return
+_SPIN = "|/-" + chr(92)
+_CR = chr(13)
 
 
 def _bar(done: int, total: int | None, secs: float, width: int = 32) -> str:
@@ -160,8 +37,6 @@ def _bar(done: int, total: int | None, secs: float, width: int = 32) -> str:
         fill = int(frac * width)
         return (f"  [{'#' * fill}{'.' * (width - fill)}] "
                 f"{done:>3}/{total}  {secs:4.0f}s")
-    # No total to divide by -- stage 1 does not announce how much work it has,
-    # so this is a liveness indicator, not a progress bar, and says so.
     return f"  [{_SPIN[int(secs * 2) % 4]}] working  {secs:4.0f}s"
 
 
@@ -176,28 +51,6 @@ MIN_PYTHON = (3, 10)
 
 
 def preflight(py: str, need_vendor: bool = True) -> None:
-    """Refuse to start unless the interpreter can actually finish.
-
-    THE FAILURE THIS PREVENTS IS A CONFUSING ONE, NOT A LOUD ONE.  Run the
-    pipeline with the wrong python and stage 1 dies four minutes in on an
-    ImportError buried under a traceback, or -- worse -- stage 2 half-builds a
-    book and stage 3 closes NDU on the way out.  The interpreter is knowable in
-    one second before anything is written, so it is checked here.
-
-    IT CHECKS THE INTERPRETER THAT WILL RUN THE STAGES, not this one.  They are
-    subprocesses and `--python` can point them anywhere, so asking our own
-    sys.modules would answer the wrong question entirely.
-
-    Two venvs exist on this machine and BOTH work:
-
-        LJOLY_Memoire_INSEEC_Msc2/.venv   python 3.12.10, polars 1.44.0
-        trends-research/.venv             python 3.11.0,  polars 1.44.1
-
-    They are interoperable -- verified by round-tripping the worksheet cache
-    between them, 95,533 x 25 read identically under each -- so this does not
-    pick a winner.  It only insists that whichever one is used can do the job.
-    pyarrow is NOT required: polars reads and writes parquet natively.
-    """
     probe = (
         "import sys, json;"
         "out={'v': list(sys.version_info[:3])};"
@@ -264,24 +117,6 @@ def preflight(py: str, need_vendor: bool = True) -> None:
 
 
 def _tick(msg: str, t0: float, tty: bool, state: dict, every: int = 10) -> None:
-    """Progress that survives NOT being a terminal.
-
-    On a tty this redraws a spinner in place.  Off one -- PyCharm's console, a
-    cron job, anything redirected -- carriage returns are useless, so it prints
-    a plain line every `every` seconds instead.
-
-    The first version only drew the spinner, guarded by isatty().  Off a
-    terminal that meant NOTHING was printed for the whole wait: a run in
-    PyCharm sat silent for up to five minutes after "Commands sent to NDU" and
-    looked hung.  It was waiting exactly as designed, which is no comfort to
-    whoever is watching a dead console decide whether to kill it.
-
-    `every` WAS 30 AND IS NOW 10.  A full piped run was measured line by line
-    and its two longest silences -- 30.2s and 30.0s -- were both this tick
-    during the NDU wait, longer than anything else in a 467-second pipeline.
-    Thirty seconds of nothing is exactly the interval that makes someone reach
-    for Ctrl-C.  Six extra lines per wait is a cheap price.
-    """
     el = time.time() - t0
     if tty:
         print(_CR + f"  [{_SPIN[int(el * 2) % 4]}] {msg}  {el:4.0f}s",
@@ -295,70 +130,6 @@ NDU_TRIGGER = Path(r"C:\Program Files\Norgate Data Updater\bin\ndu.trigger.exe")
 
 
 def ensure_ndu(dry: bool, wait: int = 60, quiet: bool = False) -> bool:
-    """STAGE 0.  Start NDU if it is down, ask it to update, wait for the data.
-
-    Stage 1 is the only stage that needs the vendor, and it fails outright if
-    NDU is not running -- which on an unattended nightly run means the whole
-    pipeline stops because an app was closed.  `ndu.trigger.exe` fixes that: it
-    starts NDU if necessary and sends it commands.  From its own usage text:
-
-        UPDATE      - Starts a Data Updater Update
-        SYNC        - Starts a synchronize for third party databases
-        CLOSE       - Closes the updater once everything else is finished
-        DONOTSHOW   - Prevents updater main window from showing when started
-
-    We send UPDATE DONOTSHOW here and CLOSE separately at the END of the run.
-    CLOSE MUST NOT GO IN THIS CALL: it "closes the updater once everything else
-    is finished", meaning once the commands in the same invocation are done --
-    so bundling it here would shut NDU down before stage 1, which is the one
-    stage that needs it, and stage 1 would fail on a pipeline that had just
-    started the updater for it.
-
-    THE TRIGGER IS ASYNCHRONOUS.  It returns as soon as the command is sent --
-    "Commands sent to NDU / Done." -- so returning here immediately would let
-    stage 1 read a database mid-update.  Hence the wait below.
-
-    THERE IS NO CLEAN COMPLETION EVENT, and this was checked rather than
-    assumed:
-
-      * `last_database_update_time` only advances when data actually CHANGES.
-        Triggered on 2026-08-28 with nothing new to fetch, it sat at 17:16:40
-        for the full three minutes we watched.  So it is a positive signal, not
-        a completion signal: it tells you new data arrived, never that the
-        update has finished finding none.
-      * The `ndu.flgupdate` semaphore the trigger writes is consumed by NDU when
-        it PICKS UP the command, not when it finishes acting on it, and it is
-        gone from disk within seconds.  It signals delivery, not completion.
-
-    So: wait for the timestamp to advance, give up after `wait` seconds, and
-    report which happened.  A timeout is the ordinary case on a quiet evening --
-    it means "nothing new", not "something broke" -- and the run continues
-    either way, because the append in stage 1 is self-correcting: a contract
-    file short of its last trade is refetched on every subsequent run until it
-    is not.
-
-    WHY THE DEFAULT IS 60s AND NOT SOMETHING LONGER.  It was 300, which was a
-    guess, and a poor one:
-
-      * It never once ended early in testing.  Every run burned the full cap,
-        because there was never new data to find -- so it was five minutes of
-        nothing, per run.
-      * It does not guarantee what it looks like it guarantees.  If a real fetch
-        took twelve minutes, 300s would not cover it either.  This is a
-        heuristic delay, not a synchronisation.
-      * STAGE 1 RUNS FOR ~205s ON ITS OWN and refreshes instruments one at a
-        time, so NDU's work already overlaps it.  Data landing thirty seconds
-        into stage 1 is still seen by almost every instrument.  A long wait here
-        roughly doubles the pipeline's runtime to protect only the first few
-        seconds of the next stage.
-
-    So the wait is a courtesy, not a guard.  Anything it misses is picked up by
-    the next run.  `--ndu-wait 0` skips it; a scheduled job running well after
-    the close can reasonably do that.
-
-    Returns (advanced, we_started_it).  Never raises for a timeout; only a
-    missing trigger binary is fatal, and that is a bad install.
-    """
     print(f"\n{'=' * 72}\n  NDU  (start if down, then update)\n{'=' * 72}")
     if not NDU_TRIGGER.is_file():
         print(f"  [ABORT] trigger not found: {NDU_TRIGGER}")
@@ -370,15 +141,6 @@ def ensure_ndu(dry: bool, wait: int = 60, quiet: bool = False) -> bool:
         return False, False
 
     def _running() -> bool:
-        """Is NDU up?  Asked of the PROCESS LIST, never of the API.
-
-        `norgatedata.status()` costs 0.0s when NDU is up and FORTY-FIVE SECONDS
-        when it is down -- it retries internally ten times and prints a warning
-        for each.  The first version of this asked the API for a baseline before
-        firing the trigger, so a cold start burned 45s and twelve lines of noise
-        before doing anything.  The process list answers the same question in
-        milliseconds and cannot flood the log.
-        """
         try:
             out = subprocess.run(
                 ["tasklist", "/FI", "IMAGENAME eq dataupdater.norgate.exe"],
@@ -388,7 +150,6 @@ def ensure_ndu(dry: bool, wait: int = 60, quiet: bool = False) -> bool:
         return "dataupdater.norgate.exe" in out.lower()
 
     def _stamp():
-        """Last Futures update time, or None.  Only call once NDU is up."""
         try:
             import norgatedata as nd
             from norgatedata import norgatehelper as H
@@ -415,9 +176,6 @@ def ensure_ndu(dry: bool, wait: int = 60, quiet: bool = False) -> bool:
     t0 = time.time()
     tty = sys.stdout.isatty()
 
-    # Wait for the PROCESS first when NDU was down.  It takes ~15-20s to come
-    # up, and every API call before then costs 45s of retries for an answer the
-    # process list already has.
     if not was_up:
         st_state: dict = {}
         while time.time() - t0 < min(wait, 90) and not _running():
@@ -467,16 +225,6 @@ def ensure_ndu(dry: bool, wait: int = 60, quiet: bool = False) -> bool:
 
 
 def close_ndu(dry: bool) -> None:
-    """Shut NDU down.  A SEPARATE call, made after every stage has finished.
-
-    `CLOSE` closes the updater once the commands in its own invocation are done,
-    so it cannot ride along with the UPDATE in stage 0 -- that would kill NDU
-    before stage 1 could query it.
-
-    Runs even when a stage failed: the pipeline started this process, so the
-    pipeline puts it away.  Leaving an updater running after an aborted nightly
-    job is how you end up with one per night.
-    """
     if dry or not NDU_TRIGGER.is_file():
         return
     print("")
@@ -492,18 +240,6 @@ def close_ndu(dry: bool) -> None:
 
 def run(label: str, cmd: list[str], dry: bool, total: int | None = None,
         blocking: bool = True) -> float:
-    """Run one stage.  Raises SystemExit with the stage's own code on failure.
-
-    `-u` IS ADDED HERE, NOT AT THE CALL SITES, so a stage added later cannot
-    forget it.  Python block-buffers stdout in ~8 KB chunks whenever it is not
-    writing to a terminal, and a stage's stdout here is NEVER a terminal: the
-    tty path below hands it a pipe so the bar can read it, and the redirected
-    path hands it a file or PyCharm's console.  Without `-u` the child's output
-    therefore sits in its own buffer and arrives in bursts -- or, for a stage
-    that prints less than 8 KB, all at once when it exits.  The progress bar is
-    driven by counting the child's lines, so a buffered child means a bar that
-    does not move until the stage it is measuring has already finished.
-    """
     if cmd and Path(cmd[0]).name.lower().startswith("python") and "-u" not in cmd:
         cmd = [cmd[0], "-u", *cmd[1:]]
     print(f"\n{'=' * 72}\n  {label}\n{'=' * 72}")
@@ -512,9 +248,6 @@ def run(label: str, cmd: list[str], dry: bool, total: int | None = None,
         return 0.0
     t0 = time.time()
     if not sys.stdout.isatty():
-        # Redirected to a file: carriage returns would fill it with
-        # half-drawn bars.  Plain pass-through instead -- a log is read after
-        # the fact, where a progress bar is worth nothing anyway.
         rc = subprocess.run(cmd).returncode
     else:
         proc = subprocess.Popen(cmd, stdout=subprocess.PIPE,
@@ -527,7 +260,6 @@ def run(label: str, cmd: list[str], dry: bool, total: int | None = None,
                 print(_CR + _bar(done, total, time.time() - t0),
                       end="", flush=True)
             else:
-                # Wipe the bar, emit the real line, redraw beneath it.
                 print(_CR + " " * 60 + _CR + line.rstrip(), flush=True)
                 if done:
                     print(_bar(done, total, time.time() - t0),
@@ -538,11 +270,6 @@ def run(label: str, cmd: list[str], dry: bool, total: int | None = None,
         rc = proc.returncode
     dt = time.time() - t0
     if rc != 0:
-        # A NON-BLOCKING STAGE MUST NOT CLAIM IT STOPPED THE RUN.  Stage 4b is
-        # caught by its caller and the pipeline continues; printing the generic
-        # "Later stages NOT run" there is a plain untruth in the output, and an
-        # untrue line in a log is worse than no line -- it is what somebody
-        # reads when they are working out why a run went wrong.
         tail = ("Later stages NOT run." if blocking
                 else "Non-blocking: the run continues.")
         print(f"\n[{'ABORT' if blocking else 'FAILED'}] {label} exited {rc} "
@@ -552,34 +279,11 @@ def run(label: str, cmd: list[str], dry: bool, total: int | None = None,
     return dt
 
 
-# ---------------------------------------------------------------------------
-# Verification.  Terminal output only -- nothing is written to disk.
-#
-# EVERY CHECK HERE EXISTS BECAUSE THE FAILURE IT CATCHES HAS HAPPENED, or is
-# one line away from happening.  A suite of plausible-sounding assertions that
-# have never fired teaches you nothing; these are the shapes of real mistakes:
-# a column that vanished from one file, a stale file a partial run left behind,
-# a bound that was assumed rather than enforced.
-# ---------------------------------------------------------------------------
-
 def _ok(label: str, cond: bool, detail: str = "") -> tuple[bool, str, str]:
     return (bool(cond), label, detail)
 
 
 def _note(label: str, detail: str = "") -> tuple[None, str, str]:
-    """Something wrong that must be SEEN but must not stop the pipeline.
-
-    `publish.py` aborts when the previous run recorded failures, which is right
-    for anything that makes the published numbers wrong and wrong for anything
-    that does not. The vendor dropping open interest is a real defect in the
-    feed, reported here every run until it is fixed -- but nothing downstream
-    reads open interest, so failing on it would take the site offline over a
-    field no published figure depends on.
-
-    THE MOMENT SOMETHING CONSUMES THAT FIELD these become `_ok` and the
-    pipeline stops on them. A participation cap on order size is the obvious
-    candidate, and it would read exactly the column that is missing here.
-    """
     return (None, label, detail)
 
 
@@ -604,12 +308,6 @@ def _report(title: str, results: list[tuple[bool, str, str]]) -> int:
 
 
 def _hold_for() -> set[str]:
-    """The Roll_Rule -> hold-column map, read from trading_book itself.
-
-    Imported rather than restated: a rule added there and forgotten here would
-    make this check pass while stage 2 aborts on it, which is worse than having
-    no check at all.
-    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("_tb", BOOK)
     m = importlib.util.module_from_spec(spec)
@@ -618,26 +316,6 @@ def _hold_for() -> set[str]:
 
 
 def verify_holds(quiet: bool = False) -> int:
-    """Does every instrument actually resolve a contract on the newest session?
-
-    THE ONE CHECK THAT RUNS THE ROLL RULES rather than inspecting their record.
-    Everything else in stage 1 reads contract_cycles.csv; this asks the rule the
-    question it exists to answer -- what do I hold today -- and requires an
-    answer for all 63.
-
-    An instrument goes empty when its ladder changes under a rule that no longer
-    resolves: a market that stops listing the month the rule wants, a notice
-    date that moves inside the gate, a contract that expires with no successor
-    quoted. Historical sessions stay fine, so nothing in the file looks wrong;
-    only TODAY is blank, and stage 2 would emit a book that simply stops.
-
-    IT IS NOT FREE AND DOES NOT NEED TO BE.  Resolving a hold needs the whole
-    worksheet -- the rules carry streaks and ratchets across sessions, so a
-    short window would answer a different question.  But this builds through
-    `trading_book.cached_worksheet`, writing the same cache stage 2 reads with
-    the same fingerprint, so the ~5 minutes is stage 2's work brought forward,
-    not added to it.  On a warm cache it is seconds.
-    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("_tb", BOOK)
     tb = importlib.util.module_from_spec(spec)
@@ -650,29 +328,11 @@ def verify_holds(quiet: bool = False) -> int:
     empty, dangling, failed, built = [], [], [], 0
     t0 = time.time()
     tty = sys.stdout.isatty()
-    # TIME-BASED OFF A TTY, NOT EVERY-Nth.  This loop takes 188s cold and ~2s
-    # warm, so any fixed instrument count is wrong at one end or the other:
-    # every-10th left a 34.6s gap cold, and would spam a warm run that needs no
-    # progress at all.  A 5s floor adapts to both -- roughly 35 lines cold,
-    # two warm.
     _EVERY = 5.0
     _last = [t0]
     print(f"  resolving {len(rules)} roll rules against the newest session "
           f"(rebuilds the worksheet cache; slow when cold)", flush=True)
     for n, (inst, rule) in enumerate(sorted(rules.items()), 1):
-        # PROGRESS THAT SURVIVES NOT BEING A TERMINAL.  This was `if tty` only,
-        # so off a terminal -- PyCharm's console, a redirected log, the exact
-        # places an unattended run lives -- NOTHING was printed while this
-        # rebuilt 63 worksheets.  Measured cold: 188 seconds of total silence,
-        # immediately after stage 1's PANEL EDGE banner.  That is what was
-        # reported as a hang.  Same lesson and same fix as `_tick`: a carriage
-        # return is useless off a tty, so print a plain line instead.
-        #
-        # ANNOUNCED BEFORE THE WORK, NOT AFTER IT.  The build below is one
-        # blocking call, and CL alone takes ~13s, so a message printed on
-        # completion leaves that gap unattributed -- the console just stops.
-        # Naming the instrument first means the pause always has something
-        # under it: you can see it is on CL rather than wondering if it died.
         if not (tty or quiet) and (n == 1 or n == len(rules)
                                    or time.time() - _last[0] >= _EVERY):
             _last[0] = time.time()
@@ -693,12 +353,9 @@ def verify_holds(quiet: bool = False) -> int:
         held = {h for h in sess.get_column(col).to_list() if h}
         if not held:
             empty.append(inst)
-        # The rule can only name a contract the session actually lists; a hold
-        # pointing at a symbol with no row is a reference to nothing.
         elif not (held <= set(sess.get_column("symbol").to_list())):
             dangling.append(inst)
         if tty and not quiet:
-            # A BAR REPORTS COMPLETION, so it belongs at the end of the body.
             print(_CR + _bar(n, len(rules), time.time() - t0),
                   end="", flush=True)
     if tty and not quiet:
@@ -718,7 +375,6 @@ def verify_holds(quiet: bool = False) -> int:
 
 
 def verify_cycles() -> int:
-    """Stage 1's output: the panel and the roll rules built off it."""
     import csv as _csv
     f = HERE / "1_Roll" / "contract_cycles.csv"
     r: list[tuple[bool, str, str]] = []
@@ -736,16 +392,12 @@ def verify_cycles() -> int:
                  f"{len(ruled)}/{len(rows)}"
                  + (f"   missing: {', '.join(missing[:6])}" if missing else "")))
 
-    # A rule with no hold column aborts stage 2 per-instrument, late and loudly.
-    # Catching it here is the difference between one message and 63.
     known = _hold_for()
     unknown = sorted({x["Roll_Rule"] for x in ruled} - known)
     r.append(_ok("Roll_Rule values all map to a hold column", not unknown,
                  f"{len(known & {x['Roll_Rule'] for x in ruled})} distinct"
                  + (f"   UNKNOWN: {unknown}" if unknown else "")))
 
-    # per_year is len(codes); the one-hot columns that used to assert this were
-    # removed on 2026-08-28, so this is now the only thing checking it.
     mism = [x["instrument"] for x in rows
             if (x.get("codes") or "").strip()
             and str(len(x["codes"].strip())) != (x.get("per_year") or "").strip()]
@@ -757,11 +409,6 @@ def verify_cycles() -> int:
     r.append(_ok("every instrument has month codes", not empty,
                  f"{', '.join(empty[:6])}" if empty else "63/63" if len(rows) == 63 else ""))
 
-    # NOT "all rows agree": last_date is per INSTRUMENT, not a run stamp, and
-    # markets in a timezone ahead legitimately carry one more session -- YAP4
-    # and YXT4 do, which is why the panel edge report calls them "2 ahead".
-    # The failure worth catching is an instrument whose feed has STOPPED, so
-    # the test is distance from the newest, not equality with it.
     import datetime as _dt
     def _d(v):
         try: return _dt.date(int(v[:4]), int(v[4:6]), int(v[6:8]))
@@ -770,8 +417,6 @@ def verify_cycles() -> int:
     good = {k: v for k, v in seen.items() if v}
     newest = max(good.values()) if good else None
     stale = sorted(k for k, v in good.items() if (newest - v).days > 5)
-    # pointsize_of() aborts stage 2 mid-build on a missing row.  The mapping is
-    # a 4 KB file; checking it here turns five wasted minutes into one line.
     try:
         import csv as _c2
         with open(HERE / "instrument_mapping.csv", newline="", encoding="utf-8") as fh:
@@ -794,7 +439,6 @@ def verify_cycles() -> int:
 
 
 def verify_books(started: float, expected: int | None) -> int:
-    """Stage 2's output: the 63 trading books."""
     import polars as pl
     d = HERE / "2_Engine" / "Trading_book"
     r: list[tuple[bool, str, str]] = []
@@ -807,8 +451,6 @@ def verify_books(started: float, expected: int | None) -> int:
     r.append(_ok("one file per ruled instrument", expected is None or len(files) == expected,
                  f"{len(files)} of {expected}" if expected else "unknown expected"))
 
-    # A partial run leaves yesterday's files beside today's, and every one of
-    # them reads as valid.  mtime is the only thing that tells them apart.
     stale = [f.stem for f in files if f.stat().st_mtime < started]
     r.append(_ok("every file rewritten by this run", not stale,
                  f"{len(files) - len(stale)}/{len(files)}"
@@ -863,18 +505,13 @@ def verify_books(started: float, expected: int | None) -> int:
                 [str(x)[:10] for x in dts],
                 [None if x in (None, "") else float(x)
                  for x in t.get_column("FX_rate").to_list()]))
-        # Eq 3.35 completed: price_vol_USD_ann == price_vol_curr_ann x FX_rate.
-        # Worth asserting rather than assuming, because the failure is invisible:
-        # the currency leg going missing leaves NIY reporting 7,283,654 -- yen
-        # read as dollars -- which is a plausible-looking number about 160x too
-        # large, on the column a position sizer divides by.
         if {"price_vol_USD_ann", "price_vol_curr_ann", "FX_rate"} <= set(t.columns):
             g = lambda c: [None if x in (None, "") else float(x)
                            for x in t.get_column(c).to_list()]
             u, c, x = g("price_vol_USD_ann"), g("price_vol_curr_ann"), g("FX_rate")
             for _u, _c, _x in zip(u, c, x):
                 if _c is None or _x is None:
-                    if _u is not None:         # a null input must give a null
+                    if _u is not None:
                         fx_vol_bad.append(f.stem); break
                 elif (_u is None
                       or abs(_u - _c * _x) > abs(_c * _x) * 1e-9 + 1e-12):
@@ -882,20 +519,14 @@ def verify_books(started: float, expected: int | None) -> int:
 
     r.append(_ok("no empty or unreadable file", not empty,
                  f"{', '.join(empty[:6])}" if empty else f"{len(files)} readable"))
-    # 6A once shipped without Sign_raw while 62 files had it, and the run
-    # reported success.  One schema for the whole book, or name the odd ones.
     r.append(_ok("identical schema across every file", len(schemas) <= 1,
                  f"{len(next(iter(schemas)))} columns" if len(schemas) == 1
                  else f"{len(schemas)} DIFFERENT schemas: "
                       + " | ".join(f"{v[0]}+{len(v)-1}" for v in schemas.values())))
     r.append(_ok("dates sorted, no duplicates", not unsorted_ and not dup,
                  f"unsorted: {unsorted_[:4]}  dup: {dup[:4]}" if (unsorted_ or dup) else "all files"))
-    # held-only is the file's central claim; if it ever stops holding, every
-    # price on the row belongs to a contract the book is not holding.
     r.append(_ok("hold == symbol on every row", not hold_mismatch,
                  f"{', '.join(hold_mismatch[:6])}" if hold_mismatch else "all files"))
-    # The book can be REWRITTEN and still be stale inside: a feed that stopped
-    # produces a fresh file whose last bar is months old.  mtime cannot see it.
     if ends:
         newest = max(ends.values())
         behind = sorted(k for k, v in ends.items() if v != newest)
@@ -903,21 +534,13 @@ def verify_books(started: float, expected: int | None) -> int:
                      f"{newest}"
                      + (f"   BEHIND: {', '.join(behind[:6])}" if behind else "")))
 
-    # The Panama chain is anchored at the present, so the newest contract
-    # carries a zero offset: on the last row the adjusted close MUST equal the
-    # raw close.  One comparison per instrument tests the whole adjustment.
     r.append(_ok("Panama anchored: last Continuous_C == last close", not anchor,
                  f"{', '.join(anchor[:6])}" if anchor else "all files"))
 
-    # fdm_raw is POOLED -- one value per session shared by every instrument.
-    # If it ever differs between books, the cross-sectional pass has silently
-    # become per-instrument and the FDM means something else entirely.
     r.append(_ok("fdm_raw identical across instruments", not fdm_split,
                  f"{', '.join(sorted(set(fdm_split))[:5])}" if fdm_split
                  else "all shared dates"))
 
-    # SJB once shipped with Trend_sign entirely null while the schema check
-    # passed -- the column was PRESENT and empty.  Coverage is what catches it.
     r.append(_ok("no signal column near-empty for an instrument", not thin,
                  "   ".join(f"{a}.{b} {c:.0%}" for a, b, c in thin[:4])
                  if thin else "all >= 30% populated"))
@@ -925,9 +548,6 @@ def verify_books(started: float, expected: int | None) -> int:
     r.append(_ok("SIGNAL within +/-20", not bad_sig,
                  f"{', '.join(bad_sig[:6])}" if bad_sig else "all files"))
 
-    # Same dual-write invariant as the rates: a book whose parquet is missing or
-    # older reads correctly (the loader falls back to csv) but SILENTLY, and the
-    # point of this run is that nothing is silent.
     no_twin = [f.stem for f in files if not f.with_suffix(".parquet").is_file()]
     old_twin = [f.stem for f in files
                 if f.with_suffix(".parquet").is_file()
@@ -937,13 +557,6 @@ def verify_books(started: float, expected: int | None) -> int:
                   + (f"STALE: {', '.join(old_twin[:5])}" if old_twin else ""))
                  or f"{len(files)} pairs"))
 
-    # ---- FX_rate: present, and the RIGHT currency's rate ------------------
-    #
-    # THE CHECK THAT MATTERS IS THE SECOND ONE.  A missing column is loud; a
-    # column carrying the wrong currency's rate is not.  A CGB priced with the
-    # EUR rate is off by 61% and every number downstream still reads as a
-    # plausible dollar figure, so the only way to catch it is to re-derive the
-    # currency from the mapping and compare against that currency's own file.
     r.append(_ok("FX_rate present in every book", len(fx_vals) == len(files),
                  f"{len(fx_vals)} of {len(files)}"
                  + (f"   missing: "
@@ -984,8 +597,6 @@ def verify_books(started: float, expected: int | None) -> int:
         r.append(_ok("FX_rate matches the instrument's own currency", not wrong,
                      "   ".join(f"{a}({b}) {c:,}/{d:,}" for a, b, c, d in wrong[:4])
                      if wrong else f"{len(fx_vals)} books, {len(rate_of)} currencies"))
-        # An entirely null FX_rate means the book cannot be converted at all --
-        # very different from YAP4's leading gap before the AUD future existed.
         r.append(_ok("no book with FX_rate entirely null", not allnull,
                      f"{', '.join(allnull[:6])}" if allnull else "all convertible"))
         r.append(_ok("price_vol_USD_ann == price_vol_curr_ann x FX_rate",
@@ -998,27 +609,11 @@ def verify_books(started: float, expected: int | None) -> int:
     return _report("stage 2 -- Trading_book/", r)
 
 
-# An FX rate that moves more than this in one session is not a market move.
-#
-# SET FROM THE PANEL'S OWN WORST DAYS, not from intuition.  The largest real
-# day-over-day moves in these rates are AUD 9.47% (2008-10-06, the GFC), JPY
-# 8.65% (1998-10-07, the carry unwind) and GBP 7.81% (2016-06-24, the Brexit
-# referendum).  15% therefore clears every genuine event in 47 years of history
-# while staying an order of magnitude below what the failures this aims at would
-# produce: a missed scale factor reads as 9,900%, an inverted quote as ~100%.
 FX_MAX_DAILY_MOVE = 0.15
-# ALERT currently runs 0.033% of rows (26 of 78,939).  1% is a wide margin that
-# still fires long before a check source has quietly gone bad.
 FX_MAX_ALERT_FRAC = 0.01
 
 
 def _tb():
-    """trading_book as a module, for the tables it owns.
-
-    IMPORTED RATHER THAN RESTATED, for the same reason `_hold_for` is: a currency
-    added there and forgotten here would make this check pass while the stage it
-    is checking aborts on it, which is worse than having no check at all.
-    """
     import importlib.util
     spec = importlib.util.spec_from_file_location("_tbfx", BOOK)
     m = importlib.util.module_from_spec(spec)
@@ -1027,21 +622,6 @@ def _tb():
 
 
 def verify_fx(started: float) -> int:
-    """Stage 2's other output: the FX conversion rates, one file per rate.
-
-    CHECKED SEPARATELY FROM THE BOOKS BECAUSE THEY FAIL DIFFERENTLY.  A book that
-    goes wrong usually goes visibly wrong -- a column empties, a schema drifts, a
-    date stops advancing.  A conversion rate that goes wrong stays perfectly
-    well-formed and simply carries the wrong number; every position sized off it
-    is then wrong by that factor, with nothing anywhere reading as an error.  So
-    these checks are mostly about VALUE plausibility, which is the opposite
-    emphasis to verify_books.
-
-    The two failures worth catching are a missed scale factor -- 6J quotes USD
-    per 100 JPY and nothing in the metadata says so -- and an inversion.  Both
-    are enormous, 9,900% and ~100%, so the session-move ceiling catches either on
-    the first day it appears.
-    """
     import polars as pl
     d = HERE / "2_Engine" / "FX"
     r: list[tuple[bool, str, str]] = []
@@ -1071,11 +651,6 @@ def verify_fx(started: float) -> int:
                  f"{len(files) - len(stale)}/{len(files)}"
                  + (f"   stale: {', '.join(stale[:6])}" if stale else "")))
 
-    # THE DUAL-WRITE INVARIANT.  Programs read the parquet, people read the csv.
-    # If the two ever disagree, half the consumers are on stale numbers and
-    # neither file looks wrong on its own.  `_prefer_parquet` refuses a parquet
-    # older than its csv, so a missing or old twin degrades SAFELY -- but it
-    # degrades silently, which is what this run exists to surface.
     no_twin = [f.stem for f in files if not f.with_suffix(".parquet").is_file()]
     old_twin = [f.stem for f in files
                 if f.with_suffix(".parquet").is_file()
@@ -1116,8 +691,6 @@ def verify_fx(started: float) -> int:
         if "Derived_Rate" not in t.columns:
             continue
         v = _num(t.get_column("Derived_Rate").to_list())
-        # THE FILES ARE TRIMMED TO START WHERE THE RATE STARTS, so a null here is
-        # not a warm-up -- it means the as-of carry left a hole mid-history.
         n_null = sum(1 for x in v if x is None)
         if n_null:
             nulls.append((f.stem, n_null, len(v)))
@@ -1134,9 +707,6 @@ def verify_fx(started: float) -> int:
         if worst > FX_MAX_DAILY_MOVE:
             jumps.append((f.stem, worst, worst_at))
 
-        # csv vs parquet on the column that matters.  Cheap, and the only thing
-        # that actually PROVES the two artifacts agree rather than assuming it
-        # from the fact that one loop wrote both.
         pq = f.with_suffix(".parquet")
         if pq.is_file():
             try:
@@ -1176,9 +746,6 @@ def verify_fx(started: float) -> int:
     r.append(_ok("csv and parquet agree on Derived_Rate", not twin_diff,
                  f"{', '.join(twin_diff[:6])}" if twin_diff else f"{len(files)} pairs"))
 
-    # THE BASE CURRENCY IS AN IDENTITY AND MUST READ AS ONE.  If USD is ever
-    # anything but 1.0 the portfolio's own currency has been redefined, and every
-    # other rate in the folder is now quoted against the wrong base.
     for ccy, want, label in (("USD", 1.0, "USD is exactly 1.0 (base currency)"),
                              ("HKD", None, "HKD sits exactly on the peg")):
         f = d / f"{ccy}.csv"
@@ -1206,14 +773,6 @@ def verify_fx(started: float) -> int:
 
 
 def verify_portfolio(started: float) -> int:
-    """Stage 3's output: the sized positions and the portfolio series.
-
-    THE FAILURES HERE ARE ARITHMETIC, NOT STRUCTURAL.  A position file that is
-    malformed announces itself; one that is well-formed and wrongly sized does
-    not, and it is the only artifact in this pipeline that says how much money
-    to put at risk.  So these checks re-derive 3.32 and 3.33 from their inputs
-    and insist the file agrees, rather than inspecting shapes.
-    """
     import numpy as np
     import polars as pl
     d = HERE / "3_Portfolio"
@@ -1247,7 +806,6 @@ def verify_portfolio(started: float) -> int:
     idm, wcw, na = g("IDM"), g("wCw"), g("n_active")
     nav, pnl = g("NAV"), g("pnl_USD")
 
-    # --- eq 3.33 re-derived ------------------------------------------------
     bad_idm = 0
     if idm is not None and wcw is not None:
         for a, b in zip(idm, wcw):
@@ -1261,30 +819,13 @@ def verify_portfolio(started: float) -> int:
     r.append(_ok("IDM within [1, 4]", bool(idm is not None
                  and (idm >= 1.0 - 1e-12).all() and (idm <= 4.0 + 1e-12).all()),
                  f"min {idm.min():.3f}  max {idm.max():.3f}" if idm is not None else "-"))
-    # w'Cw must be positive: it is a variance of a weighted portfolio.
     fin = [x for x in (wcw if wcw is not None else []) if x == x]
     r.append(_ok("w'Cw positive wherever defined", all(x > 0 for x in fin),
                  f"{len(fin):,} defined, min {min(fin):.5f}" if fin else "-"))
 
-    # --- equity must be the running sum of P&L, exactly ---------------------
-    #
-    # AGAINST EQUITY, NOT THE SIZING BASE.  Under compounding the two are the
-    # same series and either would do; under `--fixed-nav` the sizing base is
-    # constant by construction, so reconciling P&L against it would fail on a
-    # correct run and hide a real break on an incorrect one.  `equity_USD` is
-    # the money in both modes.
     eq = g("equity_USD")
     if eq is None:
         eq = nav
-    # COSTS ARE DEDUCTED FROM NAV, and `net_pnl_USD` is built against the
-    # SHIFTED cost precisely so this reconciliation is the obvious one:
-    #
-    #     equity[t] = equity[t-1] + net_pnl_USD[t]
-    #
-    # A trade is paid for at t-1 and earns its move into t, so netting against
-    # the unshifted `cost_USD` would leave a gap of exactly the first and last
-    # session's cost -- small enough to read as float noise.  `cost_lag_USD`
-    # removes the ambiguity rather than documenting around it.
     npl = g("net_pnl_USD")
     itr = g("interest_USD")
     drift = 0.0
@@ -1301,7 +842,6 @@ def verify_portfolio(started: float) -> int:
                  f"min NAV {nav.min():,.0f}   min equity {eq.min():,.0f}"
                  if nav is not None and eq is not None else "-"))
 
-    # --- rounding: contracts are integers, and always toward zero ----------
     frac, wrongway, carry_bad, buf_bad = [], [], [], []
     for f in files:
         t = pl.read_csv(f, infer_schema_length=None)
@@ -1309,20 +849,8 @@ def verify_portfolio(started: float) -> int:
             continue
         raw = t.get_column("N_raw").to_numpy()
         con = t.get_column("N_contracts").to_numpy()
-        # THE ROUNDING RULE APPLIES TO N_target, NOT TO N_contracts.  3.36's
-        # buffer sits between them: when a move is inside the band the executed
-        # position stays at YESTERDAY'S size, which can legitimately be larger
-        # than today's |N_raw|.  Checking the executed number against N_raw
-        # therefore fails on a correct run -- it did, on all six FX books --
-        # while telling you nothing about the rounding.  N_target is the
-        # truncation's own output and is what the rule is about.
         tgt = (t.get_column("N_target").to_numpy()
                if "N_target" in t.columns else con)
-        # A CARRIED ROW HAS NO N_raw TO COMPARE AGAINST -- 3.32 was not
-        # evaluated because the market was shut -- so the rounding rule is
-        # checked only where it applied.  What IS checked on those rows is that
-        # the position really was carried and not quietly changed while the
-        # market could not be traded.
         if "sized" in t.columns:
             sz = [str(x).lower() in ("true", "1") for x in
                   t.get_column("sized").to_list()]
@@ -1334,17 +862,11 @@ def verify_portfolio(started: float) -> int:
                 continue
             if b != int(b):
                 frac.append(f.stem); break
-            # toward zero: |N| never exceeds |raw|, and the sign never flips
             if abs(b) > abs(a) + 1e-9 or (b != 0 and a != 0 and (b > 0) != (a > 0)):
                 wrongway.append(f.stem); break
         for b in con:
             if b == b and b != int(b):
                 frac.append(f.stem); break
-        # Equation 3.36 re-derived.  The executed position must be EITHER
-        # today's target or yesterday's position, and holding is allowed only
-        # when the move was inside the 10% band.  A buffer that suppressed a
-        # trade it should have passed would otherwise be invisible: the series
-        # would still be integral, still monotone, still reconcile.
         if "N_target" in t.columns and "sized" in t.columns:
             sz = [str(x).lower() in ("true", "1") for x in
                   t.get_column("sized").to_list()]
@@ -1362,9 +884,6 @@ def verify_portfolio(started: float) -> int:
     r.append(_ok("N_contracts is a whole number", not frac,
                  f"{', '.join(sorted(set(frac))[:6])}" if frac
                  else f"{len(files)} files"))
-    # THE ROUNDING RULE IS THE POINT.  floor(-2.7) = -3 would INCREASE a short;
-    # truncation toward zero gives -2.  A rule that can enlarge a position is
-    # the one mistake a sizer must not make silently.
     r.append(_ok("rounding always REDUCES |position|", not wrongway,
                  f"{', '.join(sorted(set(wrongway))[:6])}" if wrongway
                  else "toward zero everywhere"))
@@ -1372,10 +891,6 @@ def verify_portfolio(started: float) -> int:
                  not buf_bad,
                  f"{', '.join(sorted(set(buf_bad))[:4])}" if buf_bad
                  else f"b = 0.10, {len(files)} files"))
-    # Costs reconcile at both levels, and the two levels agree with each other.
-    # A cost column that is merely PRESENT proves nothing: the failure worth
-    # catching is a per-instrument cost that never reaches the portfolio total,
-    # or a net that quietly equals its gross.
     cost_bad, net_bad = [], []
     tot_c = None
     for f in files:
@@ -1387,28 +902,13 @@ def verify_portfolio(started: float) -> int:
         nn = t.get_column("net_pnl_USD").to_numpy()
         cl = (t.get_column("cost_lag_USD").to_numpy()
               if "cost_lag_USD" in t.columns else cc)
-        # net is against the LAGGED cost -- see the note on the reconciliation.
         if np.nanmax(np.abs((gg - cl) - nn)) > 1e-6:
             net_bad.append(f.stem)
-        # NO ROW-ADJACENCY CHECK ON THE LAG HERE, deliberately.  A position
-        # file omits sessions where the instrument had neither a forecast nor a
-        # position, so "the previous row" is not always "the previous session"
-        # -- 6S has one such gap, and comparing adjacent rows flagged it as a
-        # fault when the column was right.  `cost_lag_USD` is shifted on the
-        # SESSION GRID, which is what the equity recursion runs on; the
-        # portfolio-level file has no gaps and the shift IS verified there.
         if not (cc >= -1e-9).all():
             cost_bad.append(f"{f.stem} negative")
     r.append(_ok("net_pnl == pnl - cost_lag, per instrument", not net_bad,
                  f"{', '.join(sorted(set(net_bad))[:6])}" if net_bad
                  else f"{len(files)} files"))
-    # NOTIONAL IS AN ABSOLUTE QUANTITY AND CANNOT BE NEGATIVE.  It went
-    # negative on 39,585 instrument-sessions because it was priced off the
-    # PANAMA close, which is anchored at the present and drifts below zero in
-    # early history -- CL bottoms at -29.11 against a raw low of 10.42.  The
-    # P&L was unaffected (differences from Panama are correct; it is LEVELS that
-    # must come from the raw close), so nothing else looked wrong: the only
-    # symptom was a negative mean Gross/NAV for an entire asset class.
     for f in files:
         t = pl.read_csv(f, infer_schema_length=None)
         if "notional_USD" in t.columns:
@@ -1425,13 +925,6 @@ def verify_portfolio(started: float) -> int:
         r.append(_ok("portfolio net_pnl == pnl - cost_lag",
                      bool(np.nanmax(np.abs((ppnl - pcl) - pnet)) < 1e-6),
                      f"max diff {np.nanmax(np.abs((ppnl - pcl) - pnet)):.1e}"))
-        # COST IS CONSERVED, NOT SHIFTED.  This asserted `cost_lag == shift(cost)`
-        # until 2026-08-30, which was the OLD behaviour and the defect: a cost
-        # decided at t fills at that instrument's own next open, so on a session
-        # some market was shut the two series legitimately part company. The
-        # invariant that survives the fix is stronger and is the one that
-        # matters -- every dollar decided is eventually charged, none is
-        # invented, and nothing is charged before it was decided.
         cum_dec = np.nancumsum(pc)
         cum_chg = np.nancumsum(pcl)
         never_early = bool(np.all(cum_chg <= cum_dec + 1e-6))
@@ -1439,8 +932,6 @@ def verify_portfolio(started: float) -> int:
         r.append(_ok("commission charged never precedes decided",
                      never_early,
                      f"cumulative charged <= decided on all {len(pc):,} sessions"))
-        # What is left over is the last session's decision, which fills after
-        # the window ends and so is correctly still unpaid.
         last = float(np.nan_to_num(pc[-1]))
         r.append(_ok("every dollar decided is charged, or still pending",
                      abs(pending - last) < 0.01,
@@ -1452,11 +943,6 @@ def verify_portfolio(started: float) -> int:
             r.append(_ok("net_ret == net_pnl / NAV[t-1]",
                          bool(np.nanmax(np.abs(exp[1:] - nrr[1:])) < 1e-9),
                          f"max diff {np.nanmax(np.abs(exp[1:] - nrr[1:])):.1e}"))
-            # THE CASH LEG, RE-DERIVED.  net_ret is the strategy alone and is
-            # already an excess return -- nothing in it earns the bill rate --
-            # so total_ret minus net_ret must be exactly the interest.  If those
-            # two ever disagree the rate has been counted twice, or not at all,
-            # and neither shows up as a malformed number.
             tr_ = g("total_ret")
             if tr_ is not None and itr is not None and nav is not None:
                 exp_i = np.zeros(len(nav)); exp_i[1:] = itr[1:] / nav[:-1]
@@ -1464,11 +950,6 @@ def verify_portfolio(started: float) -> int:
                              bool(np.nanmax(np.abs((tr_ - nrr - exp_i)[1:])) < 1e-12),
                              f"max diff "
                              f"{np.nanmax(np.abs((tr_ - nrr - exp_i)[1:])):.1e}"))
-                # AGAINST THE APPLIED RATE, NOT THE ROW'S OWN.  interest[t] is
-                # earned with the rate from t-1, so comparing it to
-                # rf_accrual_next[t] flags eleven March-2020 sessions as faults
-                # when the bill rate really was negative and the interest really
-                # was a charge.  `rf_accrual_applied` is that rate, shifted.
                 rap = g("rf_accrual_applied")
                 if rap is not None:
                     bad_i = int((itr[rap > 0] < -1e-9).sum())
@@ -1485,37 +966,6 @@ def verify_portfolio(started: float) -> int:
                  f"{', '.join(sorted(set(carry_bad))[:6])}" if carry_bad
                  else f"{len(files)} files"))
 
-    # THE BOOK MUST NEVER GO FLAT ONCE IT HAS STARTED.  That is both stronger
-    # and more useful than "some instrument is active every session".
-    #
-    # n_active LEGITIMATELY REACHES ZERO.  The grid is the union of 63 markets'
-    # calendars, so a US holiday leaves only a handful of foreign markets with a
-    # bar -- and in the early years none of those had a usable forecast yet.
-    # There are 21 such sessions and every one is Thanksgiving, Presidents' Day,
-    # Memorial Day, July 4th, Labor Day, Christmas or Good Friday.  Asserting
-    # n_active > 0 there asserts that markets do not close.
-    #
-    # What must not happen is the PORTFOLIO emptying on those days, and that is
-    # exactly what an earlier version did: a shut market has no bar, so its
-    # sized position came out zero, the whole line was liquidated and bought
-    # back the next session, and the spurious round trips dominated turnover.
-    # Positions now carry through a closed market, so this is the check that
-    # would have caught it -- it fails the moment the book goes flat for any
-    # reason other than not having started.
-    # ---- the Sharpe is EXCESS OF IRX, and that is checkable ---------------
-    #
-    # `net_ret` is trading P&L after commission and contains no interest, so a
-    # Sharpe computed on it is already excess of the bill rate: the cash leg
-    # sits in `total_ret`, and total_ret - rf gives the same number back.  The
-    # check exists because the report says "excess of IRX" and a label is not
-    # evidence -- and because the failure it guards against is subtracting IRX
-    # a SECOND time, which looks like a correction and would cut the reported
-    # Sharpe from 1.13 to about 0.68 on the current window.
-    #
-    # The residual is not noise: it is rf x (cost/NAV), the interest not earned
-    # because commission left the account before the accrual.  0.0002 over
-    # 1990+, 0.0037 on a 2026 start.  The tolerance scales with the interest
-    # effect itself so it cannot pass vacuously on a zero-rate window.
     tot = g("total_ret")
     rfa = g("rf_accrual_applied")
     nret = g("net_ret")
@@ -1548,21 +998,6 @@ def verify_portfolio(started: float) -> int:
 
 
 def verify_bookkeeping(started: float) -> int:
-    """Stage 4's output: the order ledger and the two daily views.
-
-    THE CENTRAL CHECK IS A REPLAY, and it is the only one that matters much.
-    Apply every order in sequence from flat and the book must hold exactly
-    `N_contracts`, in exactly one contract, on every session -- which says the
-    ledger is a LOSSLESS ENCODING of the position path rather than merely a
-    plausible one.  450,000 sessions in 0.6s, so it runs every night.
-
-    Everything else guards the failure this stage is uniquely prone to: a ledger
-    can be internally immaculate and still describe the wrong trades, because it
-    is DERIVED from a level series and an order is a difference.  The 578 rolls
-    that a first version silently collapsed into resizes were all well-formed
-    rows -- right instrument, right date, plausible size -- and no structural
-    check would ever have looked at them twice.  Only the replay does.
-    """
     from collections import defaultdict
 
     import numpy as np
@@ -1594,10 +1029,6 @@ def verify_bookkeeping(started: float) -> int:
         return _report("stage 4 -- 4_Bookkeeping/", r)
 
     L = pl.read_parquet(led_f.with_suffix(".parquet"))
-    # THE CSV IS THE ONE A HUMAN OPENS, so it has to be checked, not assumed.
-    # Reading it back typed is exactly the trap this pipeline dual-writes to
-    # avoid, so compare shape and edges instead -- which is what would move if
-    # the two writes ever diverged.
     C = pl.read_csv(led_f, infer_schema_length=0)
     same = (C.height == L.height and C.columns == L.columns
             and (not L.height or C.get_column("decision_date")[-1]
@@ -1622,8 +1053,6 @@ def verify_bookkeeping(started: float) -> int:
     r.append(_ok("quantity strictly positive", bool((q > 0).all()),
                  f"{int((q <= 0).sum())} non-positive" if bool((q <= 0).any())
                  else f"min {q.min():,.0f}  max {q.max():,.0f}"))
-    # Whole contracts.  Stage 3 truncates toward zero, so a fraction here would
-    # be an order no exchange can fill.
     frac = int((q != q.round()).sum())
     r.append(_ok("quantity is a whole number of contracts", frac == 0,
                  f"{frac} fractional" if frac else f"{L.height:,} orders"))
@@ -1641,7 +1070,6 @@ def verify_bookkeeping(started: float) -> int:
                  f"unexpected: {sorted(kinds - known)}" if kinds - known
                  else "  ".join(f"{k} {L.filter(pl.col('kind') == k).height:,}"
                                 for k in sorted(kinds))))
-    # Each kind is a CLAIM ABOUT FLATNESS, and the claim is checkable.
     flat_bad = []
     for k, col in (("OPEN", "position_before"), ("ROLL_IN", "position_before"),
                    ("CLOSE", "position_after"), ("ROLL_OUT", "position_after")):
@@ -1655,8 +1083,6 @@ def verify_bookkeeping(started: float) -> int:
     r.append(_ok("each kind's flat side is actually flat", not flat_bad,
                  ", ".join(flat_bad) if flat_bad else "5 kinds"))
 
-    # A ROLL IS A PAIR.  One leg alone is legitimate only when the other side is
-    # flat -- rolling into a position from nothing, or out of one to nothing.
     rolls = L.filter(pl.col("kind").is_in(["ROLL_OUT", "ROLL_IN"]))
     g = rolls.group_by(["decision_date", "instrument"]).agg(
         pl.col("kind").n_unique().alias("k"),
@@ -1678,20 +1104,14 @@ def verify_bookkeeping(started: float) -> int:
     r.append(_ok("no duplicate (session, instrument, contract)", dup == 0,
                  f"{dup} duplicated" if dup else f"{L.height:,} unique keys"))
 
-    # ---- THE REPLAY -------------------------------------------------------
-    #
-    # Four questions in one walk, because they all need the same thing: this
-    # instrument's OWN sessions, which is not what a row of the position file
-    # is.  Positions sit on the panel's union grid, so the previous row can be
-    # a day this market was shut -- the mistake that hid 578 rolls.
     by_inst = {k[0]: v for k, v in L.partition_by("instrument",
                                                   as_dict=True).items()}
     div = shut = wrong_exec = sessions = nulls = 0
     fill_div = 0
     first_div = first_fill = ""
     missing = []
-    balance = {}          # (instrument, contract) -> net signed quantity
-    final = {}            # instrument -> (last symbol held, last position)
+    balance = {}
+    final = {}
     for f in sorted(pos.glob("*.parquet")):
         inst = f.stem
         t = (pl.read_parquet(f, columns=["date", "symbol", "N_contracts"])
@@ -1731,15 +1151,9 @@ def verify_bookkeeping(started: float) -> int:
             held = {c: v for c, v in held.items() if v}
             sessions += 1
             n = n or 0.0
-            # exactly the position, in exactly one contract -- or flat in none
             if held.get(sy, 0.0) != n or len(held) > bool(n):
                 div += 1
                 first_div = first_div or f"{inst}@{dte} held={held} want {sy}:{n}"
-            # THE SAME LEDGER WALKED ON THE FILL TIMELINE.  The replay above
-            # applies orders when they are DECIDED; this applies them when they
-            # EXECUTE, and must therefore land on YESTERDAY's position.  It is
-            # the check that says an order given for execution is the order that
-            # executes -- the decision-side replay cannot see a fill at all.
             for row in by_exe.get(dte, ()):
                 fill[row["contract"]] = fill.get(row["contract"], 0.0) + (
                     row["quantity"] if row["action"] == "BUY"
@@ -1763,10 +1177,6 @@ def verify_bookkeeping(started: float) -> int:
                  fill_div == 0,
                  first_fill if fill_div else
                  f"{sessions:,} sessions on the fill timeline"))
-    # TRIAL BALANCE.  Every contract ever traded must net to what is still held
-    # in it -- zero for the 9,380 that have expired, the live position for the
-    # rest.  A contract that opened and never closed is the one bookkeeping
-    # error a position-based replay cannot produce and cannot detect.
     unbal = [f"{i}/{c}" for (i, c), v in balance.items()
              if abs(v - (final.get(i, (None, 0.0))[1]
                          if final.get(i, (None, 0.0))[0] == c else 0.0)) > 1e-9]
@@ -1778,14 +1188,6 @@ def verify_bookkeeping(started: float) -> int:
                  ", ".join(missing[:5]) if missing
                  else f"{len(by_inst)} instruments"))
 
-    # ---- the priced columns ----------------------------------------------
-    #
-    # RECONCILED AGAINST POSITIONS, NOT AGAINST THE BUCKET WALK THAT PRODUCED
-    # THEM.  Re-running stage 4's own attribution here would agree with itself
-    # whatever it does.  Instead: for each contract, add up the pnl_USD of every
-    # session the instrument held it, and require the realised P&L booked
-    # against that contract to match -- exactly for a contract that has expired,
-    # and short by the open mark-to-market for one still held.
     earned = {}
     for f in sorted(pos.glob("*.parquet")):
         inst = f.stem
@@ -1796,13 +1198,6 @@ def verify_bookkeeping(started: float) -> int:
         gp = t.get_column("pnl_gap_USD").to_list()
         dy = t.get_column("pnl_day_USD").to_list()
         nq = t.get_column("N_contracts").to_list()
-        # TWO LEGS, AND ON A ROLL TWO CONTRACTS.  Under open execution the
-        # overnight gap was earned on the month held at k-2 -- the fill had not
-        # happened yet -- and the rest of the session on the month held at k-1.
-        # Off a roll they are the same contract and this is the old single
-        # credit.  Only sessions where the contract was actually HELD count: a
-        # symbol with no position earns nothing and would pad the count with
-        # thousands of no-op contracts, diluting the check into a formality.
         f0 = lambda x: 0.0 if x is None or x != x else float(x)
         for k in range(1, len(sy)):
             if k >= 2 and nq[k - 2]:
@@ -1830,10 +1225,6 @@ def verify_bookkeeping(started: float) -> int:
                  else f"{len(earned) - len(live_c):,} expired contracts, "
                       f"${unreal / 1e6:,.0f}M still unrealised in {len(live_c)} open"))
 
-    # Commission: the ledger prices EVERY LEG, stage 3 prices |dN|.  Off a roll
-    # they must agree to the cent; on a roll the ledger is higher, and by how
-    # much is the number this comparison exists to publish -- not a failure,
-    # a measurement.  See the module docstring in bookkeeping.py.
     roll_days = set(zip(rolls.get_column("instrument").to_list(),
                         rolls.get_column("decision_date").to_list()))
     lc = defaultdict(float)
@@ -1863,18 +1254,11 @@ def verify_bookkeeping(started: float) -> int:
                     worst_c = worst_c or f"{inst}@{dd} ledger {v:,.2f} vs stage3 {c:,.2f}"
     r.append(_ok("commission matches stage 3 off a roll", diff == 0,
                  worst_c if diff else f"{same:,} sessions to the cent"))
-    # ON A ROLL TOO, since 2026-08-29.  Stage 3 used to bill |dN| here and was
-    # short $1.083B over the history; it now charges both legs.  The two are
-    # computed by unrelated code -- stage 3 inside the sizing loop from N and
-    # the symbol grid, stage 4 from the derived order legs -- so agreement is
-    # evidence rather than a tautology, and this is the line that would catch
-    # the correction being lost.
     gap = led_roll - s3_roll
     r.append(_ok("commission matches stage 3 ON a roll", abs(gap) <= max(1.0, s3_roll * 1e-9),
                  f"${gap / 1e6:,.1f}M apart" if abs(gap) > max(1.0, s3_roll * 1e-9)
                  else f"${led_roll / 1e9:,.3f}B both ways, both legs charged"))
 
-    # ---- the daily statement ---------------------------------------------
     stf = d / "statement.parquet"
     if stf.is_file():
         S = pl.read_parquet(stf)
@@ -1890,16 +1274,11 @@ def verify_bookkeeping(started: float) -> int:
                      bool(err.max() < 1e-12) if m.any() else False,
                      f"max relative drift {err.max():.1e} over {int(m.sum()):,} sessions"
                      if m.any() else "no rows"))
-        # The interest line has to name the balance it was earned on.
         b = S.get_column("interest_base_USD").to_list()
         rt = S.get_column("rate_cal_day").to_numpy()
         bad_b = sum(1 for k in range(len(b))
                     if rt[k] and (b[k] is None
                                   or abs(b[k] * rt[k] - ii[k]) > max(0.01, abs(ii[k]) * 1e-9)))
-        # COUNT SESSIONS THAT ACTUALLY EARNED, not sessions with a rate.  The
-        # bill quotes a rate on all 12,552 grid sessions; the book only accrues
-        # once it has started, so a 2026 run credits 171 of them.  Reporting the
-        # rate count made the check look 70x broader than it is.
         n_acc = int(np.sum(ii != 0))
         r.append(_ok("interest == base x rate, on every accruing session",
                      bad_b == 0,
@@ -1907,11 +1286,6 @@ def verify_bookkeeping(started: float) -> int:
                      else f"{n_acc:,} sessions credited, of {int((rt != 0).sum()):,} "
                           f"carrying a rate"))
 
-    # ---- the two views ----------------------------------------------------
-    #
-    # Both key on `execute_at`, so both are checked on it.  An instrument shut
-    # today had its order decided yesterday for an open that never came: it is
-    # still pending, and selecting on the decision date would call it filled.
     P = pl.read_parquet(pend_f.with_suffix(".parquet"))
     X = pl.read_parquet(exe_f.with_suffix(".parquet"))
     asof = dec.max()
@@ -1934,15 +1308,6 @@ def verify_bookkeeping(started: float) -> int:
 
 
 def verify_irx(started: float) -> int:
-    """Stage 2's third output: the risk-free rate.
-
-    A RATE FAILS THE WAY AN FX RATE FAILS -- quietly, and in the units.  It is
-    one column of small numbers that every session of cash accrual multiplies
-    by, so an error of a factor of 360, or of 100, or a discount left
-    unconverted, produces a perfectly well-formed series and an equity curve
-    that is wrong by a compounding margin.  These checks therefore RE-DERIVE the
-    conversion from the raw quote rather than inspecting the result's shape.
-    """
     import numpy as np
     import polars as pl
     d = HERE / "2_Engine" / "IRX"
@@ -1984,7 +1349,6 @@ def verify_irx(started: float) -> int:
                  bool(np.isfinite(pct).all()),
                  f"{int((~np.isfinite(pct)).sum())} gaps"))
 
-    # ---- the conversion, re-derived from the raw quote -------------------
     try:
         n_days = _tb().IRX_BILL_DAYS
     except Exception:
@@ -1998,10 +1362,6 @@ def verify_irx(started: float) -> int:
     r.append(_ok("rf_cal_day == d/(360-d.n)",
                  bool(np.nanmax(np.abs(cal - dec / denom)) < 1e-15),
                  f"max diff {np.nanmax(np.abs(cal - dec / denom)):.1e}"))
-    # THE IDENTITY THAT PROVES THE DAY COUNT.  A per-calendar-day rate
-    # accumulated over 365 days must return the BEY exactly; if it returned the
-    # discount rate instead, the discount-to-yield conversion has been skipped
-    # and every accrual is ~2% of itself too small.
     r.append(_ok("rf_cal_day x 365 == BEY  (day count is calendar, not trading)",
                  bool(np.nanmax(np.abs(cal * 365.0 - bey / 100.0)) < 1e-12),
                  f"max diff {np.nanmax(np.abs(cal * 365.0 - bey / 100.0)):.1e}"))
@@ -2009,27 +1369,21 @@ def verify_irx(started: float) -> int:
                  bool((bey[pct > 0] >= pct[pct > 0] - 1e-12).all()),
                  f"mean uplift {np.nanmean(bey[pct > 0] - pct[pct > 0]):.4f}pp"))
 
-    # ---- the calendar gap ------------------------------------------------
     g_ok = gap[np.isfinite(gap)]
     r.append(_ok("cal_days_to_next >= 1 wherever defined",
                  bool((g_ok >= 1).all()),
                  f"min {int(g_ok.min())}d  max {int(g_ok.max())}d  "
                  f"mean {g_ok.mean():.2f}d"))
-    # A gap longer than a fortnight is not a holiday, it is a hole in the panel.
     long_gaps = int((g_ok > 10).sum())
     r.append(_ok("no calendar gap longer than 10 days", long_gaps == 0,
                  f"{long_gaps} gaps > 10d"))
     r.append(_ok("rf_accrual_next == rf_cal_day x cal_days_to_next",
                  bool(np.nanmax(np.abs(acc[:-1] - cal[:-1] * gap[:-1])) < 1e-15),
                  f"max diff {np.nanmax(np.abs(acc[:-1] - cal[:-1] * gap[:-1])):.1e}"))
-    # Only the LAST row may be null: there is no next session to be paid at.
     n_null = int((~np.isfinite(acc)).sum())
     r.append(_ok("rf_accrual_next null on the final row only", n_null == 1,
                  f"{n_null} nulls" if n_null != 1 else "as expected"))
 
-    # ---- plausibility ----------------------------------------------------
-    # Bill yields have run 17.14% (1981) to -0.105% (2020 flight to quality).
-    # Anything outside this band is a units error, not a market.
     lo, hi = -2.0, 25.0
     out = int(((pct < lo) | (pct > hi)).sum())
     r.append(_ok(f"irx_pct within [{lo}, {hi}]%  (a units sanity band)", out == 0,
@@ -2039,17 +1393,6 @@ def verify_irx(started: float) -> int:
 
 
 def verify_stages(started: float) -> int:
-    """Do the five artifacts agree WITH EACH OTHER?
-
-    EVERY OTHER REPORT CHECKS ONE STAGE AGAINST ITSELF, and a stale artifact
-    passes those effortlessly: yesterday's FX file is internally consistent,
-    sorted, non-null and correctly typed.  What it is not is the file the books
-    were built against.  These checks are the only ones that would notice.
-
-    KEPT CHEAP ON PURPOSE -- last rows, date counts and a single cross-read per
-    instrument -- because it runs on every pipeline and the expensive per-file
-    work has already been done by the reports above.
-    """
     import numpy as np
     import polars as pl
     E = HERE / "2_Engine"
@@ -2066,7 +1409,6 @@ def verify_stages(started: float) -> int:
                      False, "a stage is missing; earlier reports say which"))
         return _report("cross-stage consistency", r)
 
-    # ---- one Positions file per book, and no orphans ---------------------
     b_names = {f.stem for f in books}
     p_names = {f.stem for f in poss}
     r.append(_ok("one Positions file per book, no orphans", b_names == p_names,
@@ -2076,7 +1418,6 @@ def verify_stages(started: float) -> int:
                  + (f"   position-only {sorted(p_names - b_names)[:4]}"
                     if p_names - b_names else "")))
 
-    # ---- everything must end on the same session -------------------------
     def _last(p):
         try:
             return pl.read_csv(p, infer_schema_length=0).get_column("date")[-1][:10]
@@ -2094,7 +1435,6 @@ def verify_stages(started: float) -> int:
                  next(iter(set(ends.values()))) if agree
                  else "  ".join(f"{k}={v}" for k, v in ends.items())))
 
-    # ---- the session grid is one object ----------------------------------
     n_port = pl.read_csv(port, infer_schema_length=0).height
     if irx.is_file():
         n_irx = pl.read_csv(irx, infer_schema_length=0).height
@@ -2105,12 +1445,6 @@ def verify_stages(started: float) -> int:
         r.append(_ok("USD rate spans exactly the portfolio's grid",
                      n_usd == n_port, f"USD {n_usd:,} vs Portfolio {n_port:,}"))
 
-    # ---- values agree across the stage boundary --------------------------
-    #
-    # THE CHECK THAT ACTUALLY CATCHES A STALE INTERMEDIATE.  Stage 3 copies
-    # SIGNAL, price_vol_USD_ann and FX_rate out of the books; if the books were
-    # rebuilt and the positions were not (or vice versa), the two disagree on
-    # the last session while both files remain perfectly well-formed.
     drift = []
     for f in poss:
         b = E / "Trading_book" / f"{f.stem}.csv"
@@ -2137,13 +1471,6 @@ def verify_stages(started: float) -> int:
                  f"{', '.join(sorted(set(drift))[:5])}" if drift
                  else f"{len(poss)} instruments, 3 columns each"))
 
-    # ---- the ledger was derived from THESE positions ----------------------
-    #
-    # Stage 4 rerunning is cheap, so the failure worth naming is stage 3
-    # rerunning WITHOUT it: the ledger then describes yesterday's book while
-    # remaining internally flawless.  verify_bookkeeping's replay would diverge
-    # on the last session, but it would report an arithmetic mismatch; this
-    # reports the cause.
     orders = HERE / "4_Bookkeeping" / "Orders.parquet"
     if orders.is_file():
         newest = max(f.stat().st_mtime_ns for f in poss)
@@ -2164,24 +1491,6 @@ RECONCILE = HERE / "4_Bookkeeping" / "Reconciliation_check" / "reconcile.py"
 
 
 def deploy() -> int:
-    """Commit `docs/` and push it, which is the only thing that moves the site.
-
-    `git add docs` AND NOTHING ELSE, EVER.  This is the whole safety argument
-    and it is not a preference.  An `add -A` in this repository has already
-    swept 66 unrelated files into a commit once, taking out CI with it; at the
-    moment this was written the working tree held five changed files under
-    `docs/` and two under `Live/` that had no business being published. An
-    automated commit must be able to state exactly what it is committing, so it
-    names the path, and then CHECKS what got staged before it commits.
-
-    IT REFUSES RATHER THAN RECONCILES.  If the branch is not `main`, or the
-    remote has moved ahead, this stops and says so. Pulling or rebasing on the
-    user's behalf inside an unattended pipeline is how an automation loses
-    somebody's work, and the cost of stopping is a site that is one run stale.
-
-    Nothing here is gated on being interesting: an unchanged `docs/` is a
-    no-op, not an empty commit.
-    """
     def git(*args, check=True):
         r = subprocess.run(["git", *args], cwd=str(HERE.parent),
                            capture_output=True, text=True)
@@ -2202,13 +1511,6 @@ def deploy() -> int:
                   "deploy.")
             return 0
 
-        # A RE-RUN THAT PRODUCES THE SAME NUMBERS IS NOT A PUBLICATION.  Every
-        # run rewrites `updated_at`, `generated_at` and the cache stamp, so the
-        # tree is ALWAYS dirty and a naive check would commit five times on a
-        # day the pipeline was run five times, each differing in a timestamp.
-        # Same distinction the journal draws: those fields are context, not
-        # content.  And an older `updated_at` on unchanged numbers is not stale
-        # -- it is accurate about when those numbers were produced.
         changed = [l for l in git("diff", "-U0", "--", "docs").splitlines()
                    if (l.startswith("+") or l.startswith("-"))
                    and not l.startswith(("+++", "---"))]
@@ -2246,23 +1548,11 @@ def deploy() -> int:
         git("push", "origin", "HEAD:main")
         print(f"  pushed to origin/main -- the site will rebuild in a minute or "
               f"two.")
-        # THE DATA IS PUBLISHED; THE CODE THAT MADE IT MIGHT NOT BE.  This step
-        # deliberately commits only `docs/`, so a dirty tree elsewhere means the
-        # site now shows figures produced by code no reader can see -- which is
-        # the one claim this whole project rests on. Not fatal, and not this
-        # step's business to fix, but it must not be silent.
         dirty = [l for l in git("status", "--porcelain", "--", ".",
                                 ":!docs").splitlines() if l]
         if dirty:
             print(f"  [NOTE] {len(dirty)} uncommitted file(s) outside docs/. The "
                   f"site now shows results")
-            # NOT `l[3:]`.  Porcelain writes "XY path" with a two-column
-            # status field, but `git()` ends in .strip(), which eats the leading
-            # space of the FIRST line only -- so a fixed offset cut one
-            # character into that one path and left the rest correct.  It
-            # printed 'ive/5_Publish/publish.py'. Splitting on whitespace is
-            # indifferent to whether the column survived, and `maxsplit=1`
-            # keeps paths that contain spaces intact.
             names = [l.split(maxsplit=1)[-1] for l in dirty[:3]]
             print(f"         from a tree that is not fully committed: {names}")
         return 0
@@ -2275,10 +1565,7 @@ def deploy() -> int:
         return 1
 
 
-
-_PT_START = "2026-01-02"      # the published window; nothing before it is drawn
-# Names a page may call without defining: browser globals and the handful of
-# array/string methods the regex below cannot tell apart from a helper.
+_PT_START = "2026-01-02"
 _JS_BUILTINS = {
     "fetch", "parseFloat", "parseInt", "isFinite", "isNaN", "String", "Number",
     "Math", "Object", "Array", "JSON", "Date", "Promise", "Set", "Map",
@@ -2290,17 +1577,12 @@ _JS_BUILTINS = {
     "entries", "from", "abs", "max", "min", "round", "floor", "ceil", "sqrt",
     "then", "catch", "all", "reverse", "startsWith", "endsWith", "repeat",
     "getAttribute", "setAttribute", "getPropertyValue", "getComputedStyle",
-    # keywords a call-shaped regex cannot tell from a function
     "for", "if", "while", "switch", "catch", "return", "function", "typeof",
 
     "dispatchEvent", "scrollIntoView", "getBoundingClientRect", "add", "has",
 }
 
 
-
-# A container the page's own script addresses and then leaves blank is the
-# signature of a fetch that 404'd, a renamed field, or an exception part-way
-# through a render. Elements never written to by script are ignored.
 _RENDER_BLANK_JS = """
 () => {
   // A container the page's own script addresses and then leaves blank is the
@@ -2391,36 +1673,6 @@ _RENDER_COLOUR_JS = """
 
 
 def verify_render(started: float) -> int:
-    """Load every page in a real browser and ask what actually came out.
-
-    THE ONLY SUITE THAT SEES THE RESULT RATHER THAN THE SOURCE.  Every check
-    above reads files: the JSON is right, the CSS parses, the id exists, the
-    helper is defined. All of that passed while three summary rows carried
-    `class="pos"` and rendered GREY, because `.stats tr.sub td` is specificity
-    (0,2,2) and outranked `.stats td.pos` at (0,2,1). Nothing that reads source
-    can see that. Only `getComputedStyle` can.
-
-    THREE ASSERTIONS, chosen because each one caught a defect that actually
-    shipped today:
-
-      1. no console error, in either theme -- catches a runtime exception,
-         including one swallowed by a `.catch()`, which is how a call to a
-         function that did not exist left a line silently blank;
-      2. the colour a reader SEES on a signed figure -- catches both of today's
-         colour faults at the level that matters, where a stray `}` had
-         discarded the rule that paints every loss red;
-      3. every container a script fills is non-empty -- catches a renamed
-         field, a 404, or an exception part-way through a render, all of which
-         leave the page looking merely quiet.
-
-    NOT SCREENSHOTS.  Font rasterisation differs between machines, so a pixel
-    diff would fail for reasons nobody can act on and would train everyone to
-    ignore this report.
-
-    FAILS SAFE.  Without playwright, or without its browser, this prints one
-    note and returns zero. A machine that cannot run it still gets a working
-    pipeline; it gets less assurance, and says so.
-    """
     import http.server
     import socketserver
     import threading
@@ -2439,9 +1691,6 @@ def verify_render(started: float) -> int:
         r.append(_ok("pages present", False, "no html in docs/"))
         return _report("rendered pages -- headless", r)
 
-    # SERVED, NOT OPENED FROM DISK.  `file://` blocks the fetch() calls every
-    # page makes, so a disk-loaded page renders empty and this suite would
-    # report the failure it exists to detect on a site that is fine.
     class _Q(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **k):
             super().__init__(*a, directory=str(DOCS), **k)
@@ -2476,8 +1725,6 @@ def verify_render(started: float) -> int:
                             page.evaluate(
                                 "t => document.documentElement.dataset.theme = t",
                                 theme)
-                            # Deterministic, not a sleep: wait until the page has
-                            # actually rendered something into its own containers.
                             try:
                                 page.wait_for_function(
                                     "() => [...document.querySelectorAll("
@@ -2490,17 +1737,14 @@ def verify_render(started: float) -> int:
                             for msg in seen:
                                 errors.append(f"{name}[{theme}]: {msg[:70]}")
 
-                            # 3. every container a script fills has something in it
                             blank = page.evaluate(_RENDER_BLANK_JS)
                             for b in blank:
                                 empty.append(f"{name}[{theme}]: #{b}")
 
-                            # 2. the colour a reader actually sees
                             bad = page.evaluate(_RENDER_COLOUR_JS)
                             for b in bad:
                                 colour.append(f"{name}[{theme}]: {b}")
 
-                            # 4. the figure on screen IS the figure in the JSON
                             if theme == "light":
                                 shown.update(page.evaluate(_RENDER_TEXT_JS))
                             page.close()
@@ -2519,14 +1763,6 @@ def verify_render(started: float) -> int:
                  "; ".join(sorted(set(empty))[:4]) if empty
                  else "all populated"))
 
-    # ---- 4. the number on screen is the number in the payload -------------
-    #
-    # THE ONE THAT CATCHES A RENAMED FIELD. `fmtMoney(undefined)` returns an em
-    # dash by design, so asking for `m.equityEnd` instead of `m.equity_end`
-    # throws nothing, blanks nothing and discolours nothing -- the page simply
-    # prints a dash where the net asset value belongs, and every other check
-    # here passes. The formatting is restated in Python on purpose: agreeing
-    # with the page's own arithmetic would only prove it agrees with itself.
     import math as _math
     try:
         meta = json.loads((DOCS / "data" / "latest.json")
@@ -2550,12 +1786,6 @@ def verify_render(started: float) -> int:
             "stats:Return, annualised (arithmetic)": _pct(meta["net_ann_ret"]),
             "asof": (f"As of {meta['as_of']}, {meta['sessions']} sessions "
                      f"since {meta['window_start']}."),
-            # A ROW ON A SECOND PAGE, deliberately. Every other figure here is
-            # on the Overview, so a payload key renamed out from under the Q&A
-            # page left `#benchtable` rendering its header and nothing else --
-            # not blank, not an error, just a table with no data in it. Naming
-            # one row means its ABSENCE is a failure, which is the only way a
-            # table that quietly emptied gets noticed.
             "bench:The book": _pct(
                 meta["equity_end"] / meta["equity_start"] - 1.0),
         }
@@ -2574,26 +1804,6 @@ def verify_render(started: float) -> int:
     return _report("rendered pages -- headless", r)
 
 def verify_vendor(started: float) -> int:
-    """The bars themselves, between the vendor and everything downstream.
-
-    WHY THIS EXISTS.  Every other suite compares derived files against each
-    other, so a panel that is internally consistent and WRONG passes all of
-    them. Before this, the only questions asked of the feed were "is anything
-    more than five days stale" and "does every book end on the newest session".
-    Both pass while the vendor delivers prices with the volume and open
-    interest missing -- which it did on 2026-08-24, for 86 of the 90 contracts
-    reporting that day, unnoticed.
-
-    STRUCTURAL IMPOSSIBILITIES FAIL.  A non-positive price or an out-of-order
-    date means the file is not what it claims to be, and nothing downstream can
-    be trusted.
-
-    DATA-QUALITY ANOMALIES WARN.  An open-interest hole is a vendor problem,
-    not ours; aborting the pipeline over one would stop the site updating for a
-    reason we cannot fix, so it is reported loudly and counted instead. Nothing
-    in the engine reads volume or open interest TODAY -- the day something does
-    (a participation cap is the obvious candidate) these become failures.
-    """
     import polars as pl
     r: list[tuple[bool, str, str]] = []
     import importlib.util
@@ -2674,9 +1884,6 @@ def verify_vendor(started: float) -> int:
     r.append(_ok("no close moves more than 35% in a session", not jumps,
                  f"{len(jumps)}: {jumps[:3]}" if jumps else "largest move within band"))
 
-    # A FEED FAILURE IS A DATE, NOT A CONTRACT.  One contract missing its open
-    # interest is noise; nearly every contract missing it on the same session is
-    # the vendor, and that is the shape worth naming.
     def _worst(by_date, what):
         worst, wd = 0.0, ""
         for d, flags in by_date.items():
@@ -2689,10 +1896,6 @@ def verify_vendor(started: float) -> int:
 
     wv, dv = _worst(vol_by_date, "volume")
     wo, do = _worst(oi_by_date, "open interest")
-    # NOTED, NOT FAILED -- see `_note`. Volume and open interest are delivered
-    # by the vendor and read by nothing in this pipeline; the anomaly is real
-    # and is printed every run, but the site must not go dark over a column no
-    # published figure depends on.
     vol_bad = wv >= 0.50
     r.append((None if vol_bad else True,
               "no session missing volume across the panel",
@@ -2709,16 +1912,6 @@ def verify_vendor(started: float) -> int:
 
 
 def verify_assets(started: float) -> int:
-    """The published HTML, CSS and JS -- the half of the site that is code.
-
-    EVERY OTHER PUBLICATION CHECK LOOKS AT JSON.  The pages that render it were
-    unexamined, and that is where four real defects lived: a stray `}` in
-    site.css silently discarded the rule that follows it and every loss on the
-    P&L page rendered in black; a call to a function that did not exist failed
-    inside a `.catch()` and left a line blank; a duplicate `class` attribute was
-    dropped by the browser without complaint. None of these raise anything --
-    a CSS parse error is not an error, it is a discarded rule.
-    """
     DOCS = HERE.parent / "docs"
     r: list[tuple[bool, str, str]] = []
     pages = sorted(DOCS.glob("*.html"))
@@ -2729,7 +1922,6 @@ def verify_assets(started: float) -> int:
     def _strip(css: str) -> str:
         return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
-    # ---- CSS: a brace that does not close is a rule that does not load ----
     bad_css = []
     for f in [DOCS / "site.css"] + pages:
         txt = f.read_text(encoding="utf-8")
@@ -2743,7 +1935,6 @@ def verify_assets(started: float) -> int:
                  not bad_css, "; ".join(bad_css) if bad_css else
                  f"{len(pages) + 1} source(s)"))
 
-    # ---- HTML: tags balanced, and no attribute written twice --------------
     void = {"br", "img", "meta", "link", "input", "hr", "source", "col",
             "path", "line", "text", "polyline", "rect", "circle", "use", "stop"}
     unbalanced, dup_attr = [], []
@@ -2785,15 +1976,6 @@ def verify_assets(started: float) -> int:
     r.append(_ok("no attribute written twice in one tag", not dup_attr,
                  "; ".join(dup_attr) if dup_attr else "none"))
 
-    # ---- no id used twice on one page ------------------------------------
-    #
-    # THE CHECK BELOW CANNOT SEE THIS, and that is not an oversight in it -- it
-    # asks whether an id EXISTS and builds a set to do it, so a name used twice
-    # collapses to one entry and passes.  A duplicate is worse than a missing
-    # id: `getElementById` silently returns the FIRST match, so the page throws
-    # nothing, blanks nothing, and renders a whole table into the <h2> that
-    # happened to share the name.  The expectations page shipped `id="var"` on
-    # both its heading and its VaR table and rendered exactly that way.
     dup_ids = []
     for f in pages:
         seen = re.findall(r'\sid="([A-Za-z0-9_-]+)"', f.read_text(encoding="utf-8"))
@@ -2804,7 +1986,6 @@ def verify_assets(started: float) -> int:
                  "; ".join(dup_ids) if dup_ids
                  else f"{len(pages)} pages, all unique"))
 
-    # ---- every id a script reaches for exists on that page ---------------
     missing_ids = []
     for f in pages:
         txt = f.read_text(encoding="utf-8")
@@ -2818,7 +1999,6 @@ def verify_assets(started: float) -> int:
                  not missing_ids, "; ".join(missing_ids) if missing_ids
                  else "all resolved"))
 
-    # ---- in-page anchors resolve -----------------------------------------
     dead = []
     for f in pages:
         txt = f.read_text(encoding="utf-8")
@@ -2829,16 +2009,6 @@ def verify_assets(started: float) -> int:
     r.append(_ok("every in-page anchor resolves", not dead,
                  "; ".join(dead[:4]) if dead else "all resolved"))
 
-    # ---- a page must not reach for a helper the shared script lacks ------
-    #
-    # THE CHECK THAT CAUGHT `fmtStamp()` -- a function I invented, which failed
-    # inside a `.catch()` and left a line silently blank.
-    #
-    # COMMENTS AND STRING LITERALS ARE STRIPPED FIRST, and that is not tidiness.
-    # Scanning raw source, "Return, annualised (arithmetic)" inside a template
-    # string reads as a call to `annualised()`, and the check reported four
-    # imaginary faults on its first run. A verification nobody believes is worse
-    # than none, so it sees only code.
     def _code_only(js: str) -> str:
         js = re.sub(r"/\*.*?\*/", " ", js, flags=re.S)
         js = re.sub(r"//[^\n]*", " ", js)
@@ -2856,9 +2026,6 @@ def verify_assets(started: float) -> int:
         local = set(re.findall(r"(?:function|const|let|var)\s+([A-Za-z_][\w]*)", body))
         local |= set(re.findall(r"([A-Za-z_][\w]*)\s*=\s*(?:async\s*)?\(", body))
         local |= set(re.findall(r"(?:\(|,)\s*([A-Za-z_][\w]*)\s*(?:,|\))\s*=>", body))
-        # A PARAMETER IS A LOCAL NAME. `multiLine(..., capFn, ...)` is called as
-        # `capFn(i, st)` inside its own body, and without this the check reports
-        # every callback argument as an undefined helper.
         for params in re.findall(r"function\s+[A-Za-z_][\w]*\s*\(([^)]*)\)", body):
             local |= {q.strip().split("=")[0].strip()
                       for q in params.split(",") if q.strip()}
@@ -2874,7 +2041,6 @@ def verify_assets(started: float) -> int:
     def _strip(css: str) -> str:
         return re.sub(r"/\*.*?\*/", "", css, flags=re.S)
 
-    # ---- CSS: a brace that does not close is a rule that does not load ----
     bad_css = []
     for f in [DOCS / "site.css"] + pages:
         txt = f.read_text(encoding="utf-8")
@@ -2888,7 +2054,6 @@ def verify_assets(started: float) -> int:
                  not bad_css, "; ".join(bad_css) if bad_css else
                  f"{len(pages) + 1} source(s)"))
 
-    # ---- HTML: tags balanced, and no attribute written twice --------------
     void = {"br", "img", "meta", "link", "input", "hr", "source", "col",
             "path", "line", "text", "polyline", "rect", "circle", "use", "stop"}
     unbalanced, dup_attr = [], []
@@ -2930,7 +2095,6 @@ def verify_assets(started: float) -> int:
     r.append(_ok("no attribute written twice in one tag", not dup_attr,
                  "; ".join(dup_attr) if dup_attr else "none"))
 
-    # ---- every id a script reaches for exists on that page ---------------
     missing_ids = []
     for f in pages:
         txt = f.read_text(encoding="utf-8")
@@ -2944,7 +2108,6 @@ def verify_assets(started: float) -> int:
                  not missing_ids, "; ".join(missing_ids) if missing_ids
                  else "all resolved"))
 
-    # ---- in-page anchors resolve -----------------------------------------
     dead = []
     for f in pages:
         txt = f.read_text(encoding="utf-8")
@@ -2955,7 +2118,6 @@ def verify_assets(started: float) -> int:
     r.append(_ok("every in-page anchor resolves", not dead,
                  "; ".join(dead[:4]) if dead else "all resolved"))
 
-    # ---- a page must not reach for a helper the shared script lacks ------
     appjs = (DOCS / "app.js").read_text(encoding="utf-8")
     shared = set(re.findall(r"^(?:function|const|let)\s+([A-Za-z_][\w]*)",
                             appjs, re.M))
@@ -2965,11 +2127,6 @@ def verify_assets(started: float) -> int:
                                     f.read_text(encoding="utf-8"), re.S))
         local = set(re.findall(r"(?:function|const|let|var)\s+([A-Za-z_][\w]*)",
                                body))
-        # NOT `\b`: that also matches the method half of
-        # `localStorage.getItem(` and `r.json(`, which are not helpers and
-        # could never be undefined. Only a BARE call -- nothing but
-        # whitespace or an operator in front of it -- is a name this page
-        # has to have defined somewhere.
         for call in set(re.findall(r"(?<![.\w$])([a-z][A-Za-z0-9_]{2,})\s*\(",
                                    body)):
             if call in shared or call in local or call in _JS_BUILTINS:
@@ -2982,15 +2139,6 @@ def verify_assets(started: float) -> int:
 
 
 def verify_agreement(started: float) -> int:
-    """One number, one source.
-
-    A FIGURE ON TWO PAGES MUST COME FROM ONE FIELD.  The Q&A page briefly
-    printed a 63-session rolling mean of 7.32% as "realised volatility" beside
-    an Overview reporting 8.20% for the same run: both correct, computed
-    independently, and irreconcilable to a reader. Nothing caught it because
-    every check until now asked whether a file was internally consistent, never
-    whether two files agreed.
-    """
     DOCS = HERE.parent / "docs"
     r: list[tuple[bool, str, str]] = []
     d = DOCS / "data"
@@ -3035,10 +2183,6 @@ def verify_agreement(started: float) -> int:
                      abs(st["book"]["total"] - want) <= 1e-4,
                      f"{st['book']['total']:.6f} vs {want:.6f}"))
 
-    # THE ONE THAT WOULD HAVE CAUGHT IT.  A rolling mean may legitimately differ
-    # from the whole-run figure -- that is not the fault. The fault is a page
-    # COMPUTING its own copy of a number another page already publishes, so the
-    # test is on the source, not the value.
     qh = (DOCS / "qa.html").read_text(encoding="utf-8")
     r.append(_ok("the Q&A volatility card reads the Overview's own field",
                  "META.net_ann_vol" in qh,
@@ -3049,9 +2193,6 @@ def verify_agreement(started: float) -> int:
     r.append(_ok("Q&A position count matches the headline",
                  n_pos == m.get("n_positions", n_pos),
                  f"{n_pos} vs {m.get('n_positions')}"))
-    # AND AGAINST ITSELF. The summary card reads `exposure`, the table reads
-    # `positions`; nothing compared the two, so a payload could show 59 rows
-    # under a heading saying 58 and pass every check on the page.
     exp = qa.get("exposure") or {}
     ls = sum(1 for x in (qa.get("positions") or []) if x.get("side") == "LONG")
     sh = sum(1 for x in (qa.get("positions") or []) if x.get("side") == "SHORT")
@@ -3077,26 +2218,6 @@ def verify_agreement(started: float) -> int:
     return _report("cross-page agreement", r)
 
 def verify_publish(started: float) -> int:
-    """Did stage 6 write what it said it wrote?
-
-    EVERY GUARD IN `publish.py` RUNS BEFORE THE WRITE.  The whitelist, the
-    window guard, the page guard and the per-session reconciliation all inspect
-    rows in memory; once the files are on disk the only thing that stage does is
-    total their byte counts.  A truncated or half-written file -- interrupted
-    run, full disk, encoding fault -- therefore passes everything and lands on
-    the site looking fine.  This report is the only one that reads `docs/` back.
-
-    IT IS `verify_stages` FOR STAGE 6.  The question is the same one: do the
-    artifacts agree with each other, or is one of them internally perfect and
-    describing a different run.  A published `latest.json` claiming an equity
-    nobody compared against `Portfolio.parquet` is exactly the stale-but-
-    well-formed failure this pipeline has been bitten by everywhere else.
-
-    WHAT IT CANNOT CHECK is the live site.  The push is manual and deliberately
-    so, which means `docs/` on disk is SUPPOSED to run ahead of the deployed
-    page; a check against the URL would fail every time someone published and
-    had not yet pushed.  This verifies the artifact, not the deployment.
-    """
     import importlib.util
     import json as _json
     import polars as pl
@@ -3109,10 +2230,6 @@ def verify_publish(started: float) -> int:
         r.append(_ok("docs/data exists", False, "stage 6 wrote nothing"))
         return _report("publication -- docs/", r)
 
-    # THE DEFINITIONS COME FROM publish.py, NOT FROM A COPY HERE.  Re-deriving
-    # the cache stamp or the forbidden-word list in this file would give two
-    # implementations of one rule, which is the shape that has already cost this
-    # pipeline three quiet divergences.
     spec = importlib.util.spec_from_file_location("pub_v", PUBLISH)
     pub = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(pub)
@@ -3123,7 +2240,6 @@ def verify_publish(started: float) -> int:
         except Exception:
             return None
 
-    # ---- 1. the top-level files are all present and parse -----------------
     tops = ["qa.json", "latest.json", "history.json", "index.json", "pnl_index.json",
             "mapping.json"]
     got = {n: _load_json(DATA / n) for n in tops}
@@ -3137,7 +2253,6 @@ def verify_publish(started: float) -> int:
     latest, hist = got["latest.json"], got["history.json"]
     idx, pidx = got["index.json"]["days"], got["pnl_index.json"]["days"]
 
-    # ---- 2/3. every file the indexes promise actually exists and parses ---
     for label, rows, sub in (("journal", idx, "days"), ("attribution", pidx, "pnl")):
         bad = [x["date"] for x in rows
                if _load_json(DATA / sub / f"{x['date']}.json") is None]
@@ -3145,7 +2260,6 @@ def verify_publish(started: float) -> int:
                      f"{len(rows) - len(bad)}/{len(rows)} files"
                      + (f"   bad: {bad[:4]}" if bad else "")))
 
-    # ---- 4. the headline agrees with the portfolio it came from -----------
     P = pl.read_parquet(HERE / "3_Portfolio" / "Portfolio.parquet")
     P = P.filter(pl.col("started"))
     d = P.get_column("date").to_list()
@@ -3165,7 +2279,6 @@ def verify_publish(started: float) -> int:
                  f"{m['as_of']}  {m['sessions']} sessions  "
                  f"{m['equity_end']:,.0f}" if not diffs else "  ".join(diffs)))
 
-    # ---- 5. the curve ends where the portfolio ends -----------------------
     hl = hist["daily"][-1]
     same = (hl["date"] == d[-1]
             and abs(hl["equity_USD"] - float(eq[-1])) <= 0.01
@@ -3174,10 +2287,6 @@ def verify_publish(started: float) -> int:
                  f"{hl['date']}  {len(hist['daily']):,} rows  "
                  f"{hl['equity_USD']:,.0f}"))
 
-    # ---- 6. every published balance sheet still adds up -------------------
-    #
-    # `build_pnl` asserts this before writing; this asserts it after, on the
-    # bytes a reader will actually be served.
     off = []
     for x in pidx:
         j = _load_json(DATA / "pnl" / f"{x['date']}.json")
@@ -3188,11 +2297,6 @@ def verify_publish(started: float) -> int:
                  f"{len(pidx)} sessions"
                  + (f"   off: {off[:4]}" if off else "")))
 
-    # ---- 7. the cache stamp is present, uniform, and CURRENT --------------
-    #
-    # Uniform catches a partial stamping run; current catches assets that
-    # changed after the last publish, which is the state that serves new markup
-    # against a cached old script.
     want = pub.build_stamp(latest)
     seen = {}
     for name in pub.PAGES:
@@ -3208,7 +2312,6 @@ def verify_publish(started: float) -> int:
                  f"{want} on {len(pub.PAGES)} pages"
                  if stamps == {want} else f"found {sorted(stamps)} want {want}"))
 
-    # ---- 8. the provider is named nowhere under docs/ ---------------------
     hits = []
     for f in DOCS.rglob("*"):
         if not f.is_file():
@@ -3227,26 +2330,6 @@ def verify_publish(started: float) -> int:
 
 
 def verify_reconciliation(started: float) -> int:
-    """Close the books: recompute the money from the primary sources.
-
-    THE ONLY REPORT THAT LEAVES THE ARTIFACTS.  Every other check in this file,
-    `verify_stages` included, compares derived files with each other -- so a
-    consistent misreading of the panel passes all of them, because every stage
-    inherited the same misreading.  This one goes back to the trading books,
-    `instrument_mapping.csv` and IRX, recomputes P&L, commission, interest,
-    equity, turnover and notional from scratch, and requires the pipeline's
-    numbers to match.
-
-    Ten ties, ~3s.  It runs LAST because it is the broadest claim in the file,
-    and it is worth reading even when it passes: the two sides of D are stage 3's
-    billed contract count and stage 4's order legs, which disagreed by 143.5M
-    contracts until the roll under-billing was fixed on 2026-08-29.  A cost-model
-    regression shows up there as a contract count before it is ever money.
-
-    The arithmetic lives in `Reconciliation_check/reconcile.py` and is rendered
-    here rather than reimplemented -- two copies of a reconciliation is two
-    reconciliations, and the second one is always the stale one.
-    """
     r: list[tuple[bool, str, str]] = []
     if not RECONCILE.is_file():
         r.append(_ok("reconcile.py present", False, str(RECONCILE)))
@@ -3276,13 +2359,6 @@ def verify_reconciliation(started: float) -> int:
     return _report(f"reconciliation -- primary sources ({T.secs:.0f}s)", r)
 
 def n_books() -> int | None:
-    """How many instruments stage 2 will write, for the bar's denominator.
-
-    Read from contract_cycles.csv rather than hard-coded: the count follows the
-    panel, and a bar that says 63 while 61 are written is worse than no bar.
-    Returns None if the file cannot be read -- the bar degrades to a spinner
-    rather than the pipeline failing over a cosmetic feature.
-    """
     try:
         import csv
         with open(HERE / "1_Roll" / "contract_cycles.csv", newline="",
@@ -3353,11 +2429,8 @@ def main() -> int:
         if not args.no_ndu:
             _adv, _started = ensure_ndu(args.dry_run, wait=args.ndu_wait)
         total += run("STAGE 1/5  contract_cycles.py  (needs NDU running)",
-                     [py, str(CYCLES)], args.dry_run)   # no total: see _bar
+                     [py, str(CYCLES)], args.dry_run)
         if not (args.dry_run or args.no_verify):
-            # A bad panel FAILS THE RUN HERE rather than being carried into
-            # stage 2.  Books built off a broken panel are wrong rather than
-            # absent, and absent is the failure that gets noticed.
             if verify_cycles() + verify_holds():
                 print("")
                 print("[ABORT] stage 1 verification failed; stage 2 NOT run.")
@@ -3367,25 +2440,13 @@ def main() -> int:
         total += run(f"STAGE 2/5  trading_book.py  --jobs {args.jobs}",
                      [py, str(BOOK), "--jobs", str(args.jobs)], args.dry_run,
                      total=n_books())
-        # STAGE 3 IS INSIDE THE SAME try, so a failure here still closes NDU.
-        # It reads only what stage 2 wrote, needs no vendor, and takes seconds.
         if not args.no_portfolio:
             total += run(f"STAGE 3/5  portfolio.py  --nav {args.nav:,.0f}",
                          [py, str(PORTFOLIO), "--nav", repr(args.nav)],
                          args.dry_run)
-            # STAGE 4 READS ONLY WHAT STAGE 3 WROTE and takes about a second,
-            # so it is gated on stage 3 rather than given a skip of its own
-            # meaning: a ledger derived from yesterday's positions would be
-            # internally perfect and describe trades nobody is going to make.
             if not args.no_bookkeeping:
                 total += run("STAGE 4/5  bookkeeping.py  (order ledger)",
                              [py, str(BOOKKEEPING)], args.dry_run)
-                # THE JOURNAL IS NON-BLOCKING, ON PURPOSE.  It is a record, not
-                # an input: nothing downstream reads it, no position depends on
-                # it, and a store that can halt trading is a liability rather
-                # than a control.  So a failure here is reported and the
-                # pipeline carries on -- the derived ledger is still written and
-                # tomorrow's append picks up what today missed.
                 if not args.no_journal:
                     if JOURNAL.is_file():
                         try:
@@ -3399,48 +2460,21 @@ def main() -> int:
                     else:
                         print("  [skip] no journal.py")
     finally:
-        # Even on an abort: the pipeline started NDU, the pipeline closes it.
         if not (args.no_ndu or args.keep_ndu):
             close_ndu(args.dry_run)
     if not (args.dry_run or args.no_verify):
-        # Stage 2 checks REPORT rather than abort: the books are already
-        # written, so the useful thing is to say exactly what is wrong with
-        # them, and to leave a non-zero exit for whatever runs this.
-        # THE FEED ITSELF, before anything derived from it. Every suite below
-        # compares derived files with each other, so a panel that is internally
-        # consistent and wrong passes all of them.
         failures = verify_vendor(started)
         failures += verify_books(started, n_books())
-        # THE RATES GET THEIR OWN REPORT, not extra lines in the book one.  They
-        # are a separate artifact with separate consumers and an entirely
-        # different failure mode -- a wrong rate is well-formed and silent -- so
-        # burying eleven value checks at the end of a structural report would
-        # make the thing they are guarding harder to see, not easier.
         failures += verify_fx(started)
         failures += verify_irx(started)
         if not args.no_portfolio:
             failures += verify_portfolio(started)
             if not args.no_bookkeeping:
                 failures += verify_bookkeeping(started)
-            # ACROSS stages, and only meaningful once each has spoken for
-            # itself.
             failures += verify_stages(started)
-            # LAST, and the only one that leaves the artifacts entirely: it
-            # recomputes the money from the books, the mapping and IRX.  Every
-            # report above compares derived files with each other, so a
-            # consistent misreading of the panel passes all of them.
             if not (args.no_bookkeeping or args.no_reconcile):
                 failures += verify_reconciliation(started)
 
-    # THE RUN STAMP IS WRITTEN BEFORE STAGE 6, NOT AFTER THE SUMMARY, because
-    # stage 6 READS it: `publish.py` takes the site's "Updated" line from this
-    # file and refuses a run that failed or was partial.  Written afterwards,
-    # the site would carry the PREVIOUS run's timestamp over THIS run's numbers
-    # -- fresh figures under a stale date, which is worse than either alone.
-    #
-    # Written on every real run, pass or fail, with the count.  Recording only
-    # successes would leave the last success's timestamp standing over data a
-    # failed run had already overwritten.
     def _stamp(n_failures: int) -> None:
         if args.dry_run:
             return
@@ -3448,9 +2482,6 @@ def main() -> int:
             "completed_at": datetime.now(timezone.utc).isoformat(
                 timespec="seconds"),
             "failures": int(n_failures),
-            # `--no-verify` leaves `failures` at 0 because nothing ran, which
-            # is the one way a bad run can look like a clean one. Recorded
-            # separately so stage 6 can tell "passed" from "never asked".
             "verified": not args.no_verify,
             "full_run": not (args.no_portfolio or args.no_bookkeeping
                              or args.no_reconcile),
@@ -3458,12 +2489,6 @@ def main() -> int:
 
     _stamp(failures)
 
-    # STAGE 6 IS SKIPPED, NOT FAILED, when the run is not fit to publish from.
-    # `publish.py` would refuse anyway -- `run_stamp()` aborts on a failed or
-    # partial run -- but letting it abort HERE would end the pipeline on a
-    # traceback about the website when the real news is the verification above.
-    # The site keeping its last verified numbers is the correct outcome, and
-    # worth saying out loud rather than exiting quietly.
     published = False
     deployed = 1
     if not (args.dry_run or args.no_publish):
@@ -3487,28 +2512,12 @@ def main() -> int:
             total += run("STAGE 5/5  publish.py  (docs/data for the site)",
                          [py, str(PUBLISH)], args.dry_run)
             published = True
-            # THE ONLY REPORT THAT READS docs/ BACK.  Every guard inside
-            # publish.py runs before the write; this one runs after it, on the
-            # bytes a reader will be served.  It must therefore come after the
-            # stage, which is why it is here and not in the block above.
             if not args.no_verify:
                 failures += verify_publish(started)
-                # The other half of the site: the code that renders the JSON,
-                # and whether two pages showing the same figure got it from the
-                # same place.
                 failures += verify_assets(started)
                 failures += verify_agreement(started)
-                # LAST, and the only one that leaves the files entirely:
-                # it asks a browser what the reader actually sees.
                 failures += verify_render(started)
-                # Re-stamp: the count changed after the first write, and a
-                # stamp claiming zero failures would let the next manual
-                # publish proceed off a run this one just failed.
                 _stamp(failures)
-            # THE DEPLOY IS GATED ON EVERYTHING ABOVE IT.  It runs only when
-            # stage 5 wrote, the run was full and verified, and every report
-            # including `verify_publish` came back clean -- so the push cannot
-            # put numbers on a public page that this pipeline has not checked.
             if not (args.no_deploy or failures):
                 deployed = deploy()
 

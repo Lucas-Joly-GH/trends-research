@@ -1,105 +1,3 @@
-"""
-Front-contract worksheet: every listed month, every session, side by side.
-
-Replicates the hand-made `zc_19890508.csv` and generalises it to all 63
-instruments. The point is to make the front-contract decision auditable one
-session at a time -- which month each candidate rule picks, and where the rules
-disagree.
-
-Merged 2026-08-27 from the three sheets it replaces:
-
-    has_notice_front_contract.py       22 markets, is_deliverable AND has_notice
-    not_has_notice_front_contract.py   19 markets, is_deliverable, no notice
-    not_deliverable_front_contract.py  22 markets, cash-settled
-
-THE SPLIT WAS NEVER A TRICHOTOMY. Measured with comments stripped the three were
-~211/214/224 lines and ~85% identical. The only real axes were a BINARY date
-source and one variant column carrying three different names. The extra
-`held2` filter in the notice sheet was checked over 1,421,027 candidate sets and
-binds 0 times, so the three had no behavioural divergence at all.
-
-*** THE FINDINGS ARE IN Roll_Journal.md, NOT HERE. ***
-Every rule below has a session behind it, and the journal names it. Before
-deleting anything that "looks unnecessary", read section 2 (negative results)
-and section 3 (incidents that decided a rule). This docstring says WHAT the
-columns are; the journal says WHY, and what happened when they were absent.
-
-Columns
--------
-date, symbol, open, close, volume, open_interest
-                    raw, from Contracts/<INST>/<SYMBOL>.csv in the private repo
-first_notice        NOTICE markets only. From Data/Contract-Metadata/contracts.csv.
-till_notice_cd      NOTICE markets only. first_notice - date, CALENDAR days,
-                    signed. Negative once notice has passed.
-last_trade          EVERY OTHER MARKET. The scheduled final trading day.
-till_last_trade_cd  EVERY OTHER MARKET. last_trade - date, same convention.
-
-                    The label is per group ON PURPOSE. A generic name would hide
-                    which gate applied, and that is the first thing a reader of
-                    the sheet wants to know. `GATE` below picks the pair.
-
-is_passed           till <= 0. NOTE the <=: for a notice market delivery can be
-                    assigned ON the first notice day, so the contract is already
-                    unholdable that morning. For the others, termination IS the
-                    delivery event, so the boundary is the last trading day.
-Best_Vol            Highest volume among contracts eligible today. Eligible
-                    carries the window gate: a contract within BEST_VOL_MIN_CD
-                    of its gate date cannot win. Reads FALSE there, not blank --
-                    it traded, it is simply not somewhere a rule may leave you.
-Best_Oi             Highest open interest, SAME window gate. Does NOT require
-                    volume, and that asymmetry is deliberate: open interest is
-                    what survives a session the vendor recorded no volume for.
-B_V_3               Best_Vol true for this contract 3 CONSECUTIVE sessions.
-auto_roll           Nearest expiry, stepped on once that contract comes within
-                    AUTO_ROLL_CD days of its gate date. Reads no volume and no
-                    open interest. SESSION-level.
-Auto_Best_V         Whether auto_roll is also the volume leader. A SCORE of that
-                    rule, not an input to it.
-Forced_roll_V       The alternative where auto_roll is in doubt: nearest
-                    contract by gate date that is not auto_roll's own pick and
-                    is clear of the window. Blank where the rules already agree.
-Forced_Best_V       Whether that alternative is the volume leader. BLANK where
-                    Forced_roll_V is blank -- the rule was not asked.
-+2_Forced_Roll_V    One step further out, both earlier answers struck off.
-+2_Forced_Best_V    Whether that third contract is the leader.
-auto_roll_hold      auto_roll verbatim, beside the other hold series so the
-                    baseline and the rules read as a pair. A COPY, not a variant.
-+1_auto_roll_hold   auto_roll's decision taken one contract further out -- the
-                    front month is never held. Same ordering, same window, reads
-                    no volume. Built for the compounded-in-arrears STIRs.
-forced_roll_hold    auto_roll where Auto_Best_V, else Forced_roll_V where
-                    Forced_Best_V, else Best_Oi, else Best_Vol. RATCHETED.
-f_r_h_Best_V        Whether forced_roll_hold is the volume leader. Never blank.
-                    Expected to read LOWER than the branch scores around it, and
-                    not because the rule is worse: three of its four branches are
-                    not aiming at Best_Vol.
-confirm_forced_roll_hold
-                    forced_roll_hold held back until the same contract has been
-                    the answer ROLL_CONFIRM_SESSIONS running. Guards against the
-                    ratchet making a one-session mistake permanent.
-                    ONE COLUMN, replacing RS_/LT_/CS_forced_roll_hold, which
-                    were the same algorithm under three names. The Roll_Rule
-                    VALUES in contract_cycles.csv deliberately keep the old
-                    names: those record WHY each market was cleared.
-Test_Hold           auto_roll / Forced_roll_V / +2_Forced_Roll_V, first branch
-                    that fires, ratcheted. The third is a fallback and is NOT
-                    gated on +2_Forced_Best_V.
-Test_Best_V         Whether Test_Hold is the leader. NEVER blank: it is asked
-                    every session, so a session it cannot answer is a LOSS.
-
-BLANK IS NOT FALSE. A passed contract gets a blank flag -- out of the running,
-not losing it -- and `means` reads blank as null, dropping it from the
-denominator. Session-level columns are never blanked per row.
-
-WARM-UP IS LOAD-BEARING. B_V_3 and every hold series carry state across
-sessions, so the count accumulates from BEFORE the window. `worksheet` iterates
-from the start of contract history and only emits inside it.
-
-    python front_contract.py --instrument ZC --start 1989-05-08 --end 1989-05-23
-    python front_contract.py --instrument SO3 --start 2019-11-20 --end 2019-12-13
-    python front_contract.py --instrument ZC --means
-    python front_contract.py --instrument ZC --check <reference.csv>
-"""
 from __future__ import annotations
 
 import argparse
@@ -112,11 +10,6 @@ import polars as pl
 
 
 def _private() -> Path:
-    """Locate the private data repo by walking up, not by counting parents.
-
-    A fixed `parents[N]` breaks the moment the script moves a directory deeper,
-    silently resolving to a path that does not exist.
-    """
     for p in Path(__file__).resolve().parents:
         cand = p / "LJOLY_Memoire_INSEEC_Msc2"
         if cand.is_dir():
@@ -132,32 +25,10 @@ WORKING = Path(__file__).resolve().parent / "worksheet.csv"
 CYCLES = Path(__file__).resolve().parents[1] / "contract_cycles.csv"
 MONTH_ORDER = "FGHJKMNQUVXZ"
 
-# Rows the DATA PROVIDER should never have published.  Not a rule problem and
-# not something a rule can be made to handle -- the bar simply should not exist.
-#
-#   HO 2007-09-03: US Labor Day.  NYMEX was CLOSED, yet the panel carries a
-#   single bar for HO-2008G (563 lots, 12,662 OI, five months out) and nothing
-#   else.  The sessions either side carry 36 contracts each.  With one row in
-#   the session, any nearest-expiry rule must name it, so the chain jumps from
-#   HO-2007V out to HO-2008G and back the next day -- the only backward roll in
-#   the entire 19-instrument deliverable-no-notice group.  Deleting the row
-#   removes the cause rather than teaching the rule to tolerate a holiday it
-#   cannot detect.
 BAD_ROWS = {
     ("HO", "2007-09-03", "HO-2008G"),
 }
 
-# Whole SESSIONS the provider should not have published -- every contract in
-# them prints zero volume, so no rule can choose anything meaningful.
-#
-#   LFT9 2025-05-06 .. 2025-05-30: SEVENTEEN sessions carrying only 2025Z and
-#   2026H, both at zero, while LFT9-2025M -- the front month, trading ~62,000
-#   lots and 18 days from last trade -- has NO ROW AT ALL.  The FTSE 100 future
-#   did not stop trading for a month; the bars are simply missing.  Any
-#   nearest-expiry rule must name one of the two zero rows and then step back
-#   when the real contract returns, which is the backward roll this removes.
-#   (The pre-merge comment said "ten sessions from 05-16" -- it was written
-#   against a truncated listing and never updated. Seventeen, from 05-06.)
 BAD_SESSIONS = {
     ("LFT9", d) for d in (
         "2025-05-06", "2025-05-07", "2025-05-08", "2025-05-12", "2025-05-13",
@@ -167,42 +38,26 @@ BAD_SESSIONS = {
     )
 }
 
-BV3_SESSIONS = 3            # consecutive leading sessions to arm B_V_3
-AUTO_ROLL_CD = 5            # step off the front this close to its gate date
-BEST_VOL_MIN_CD = 5         # a contract this close cannot win Best_Vol/Best_Oi
-FORCED_ROLL_MIN_CD = 5      # Forced_roll_V will not park you this close either
-ROLL_CONFIRM_SESSIONS = 2   # confirm_forced_roll_hold waits for a repeat
-INCEPTION_VOLUME = 1000     # the market is not really trading until some
-                            # SELECTABLE contract prints this
+BV3_SESSIONS = 3
+AUTO_ROLL_CD = 5
+BEST_VOL_MIN_CD = 5
+FORCED_ROLL_MIN_CD = 5
+ROLL_CONFIRM_SESSIONS = 2
+INCEPTION_VOLUME = 1000
 
 BOOL_COLS = ["is_passed", "Best_Vol", "Best_Oi", "B_V_3", "Auto_Best_V",
              "Forced_Best_V", "+2_Forced_Best_V", "Test_Best_V", "f_r_h_Best_V"]
 
-# The two gate labels.  Which pair an instrument gets is decided by `gate`
-# below; the names are per group deliberately -- see the docstring.
 GATE = {"notice": ("first_notice", "till_notice_cd"),
         "last_trade": ("last_trade", "till_last_trade_cd")}
 
 
 def sort_key(sym: str) -> int:
-    """'ZC-1989K' -> sortable expiry index."""
     tail = sym.split("-")[1]
     return int(tail[:4]) * 12 + MONTH_ORDER.index(tail[4])
 
 
 def ratchet(cand: str | None, prev: str | None, till: dict) -> str | None:
-    """A roll goes one way: refuse a step onto a contract NEARER to its gate
-    date than the one already held, and stay put instead.
-
-    `till` is TODAY's distance by symbol, and both sides are read from it.
-    Comparing across sessions would score an ordinary hold as a step backwards,
-    since every contract's own figure falls by a day overnight.
-
-    Staying put is always the safe side: a backward step means the candidate is
-    closer to the gate than the incumbent, so the incumbent is the further of
-    the two.  An incumbent no longer listed has no figure today and does not
-    block.
-    """
     if cand is None or prev is None or cand == prev:
         return cand
     a, b = till.get(prev), till.get(cand)
@@ -210,19 +65,6 @@ def ratchet(cand: str | None, prev: str | None, till: dict) -> str | None:
 
 
 def gate(inst: str) -> str:
-    """'notice' or 'last_trade' -- which date this market is gated on.
-
-    BINARY, not three-way.  has_notice markets gate on first_notice; everything
-    else gates on last trade, whether it is deliverable or cash-settled.  That
-    is why merging the three sheets lost nothing: the deliverable-no-notice and
-    cash-settled sheets were already the same rule on the same field.
-
-    Energy is why the distinction exists at all.  The vendor returns None for
-    first_notice on every contract in those markets -- CL 0 of 645, NG 0 of 568,
-    HO 8 of 609, and those 8 are 1979 records with notice AFTER last trade --
-    because the concept does not exist in the contract structure: trading
-    TERMINATES and delivery is assigned afterwards.
-    """
     if not CYCLES.exists():
         return "last_trade"
     t = pl.read_csv(CYCLES, infer_schema_length=0)
@@ -234,11 +76,6 @@ def gate(inst: str) -> str:
 
 
 def gate_map(inst: str, which: str) -> dict:
-    """symbol -> the gate date for this market, as an ISO string.
-
-    One reader for both fields.  Last trade is forward-looking in the vendor's
-    data, so a live contract carries its scheduled date rather than "today".
-    """
     if not NOTICE.exists():
         return {}
     col = "first_notice" if which == "notice" else "last_trade"
@@ -280,13 +117,6 @@ def load(inst: str) -> pl.DataFrame:
 
 
 def dead_months(inst: str) -> set:
-    """Delivery months this market lists but does not trade.
-
-    Curated in contract_cycles.csv.  ZC lists F and X but holding them gives a
-    median 0.8% and 0.4% of session volume against 28.8-62.4% for H/K/N/U/Z, so
-    a purely calendar-driven roll walks straight into them.  Empty means NOT YET
-    MEASURED for that instrument, not "none".
-    """
     if not CYCLES.exists():
         return set()
     t = pl.read_csv(CYCLES, infer_schema_length=0)
@@ -297,23 +127,6 @@ def dead_months(inst: str) -> set:
 
 
 def inception(d: pl.DataFrame, dead: set) -> object:
-    """First session on which a SELECTABLE contract printed INCEPTION_VOLUME.
-
-    Measured on the same candidate set selection uses -- dead months excluded.
-    Measuring it on every contract starts the panel before anything tradable
-    exists: SI's 1980F cleared 1,000 lots on 1978-03-07 and opened the panel,
-    but F is dead in silver, so nothing was selectable and auto_roll was empty
-    for 37 sessions until 1980H appeared trading 2 lots.
-
-    Before that the instrument is listed but not traded, and the panel shows it:
-    CT in 1978 carries a single contract 522 days from notice printing 5-10 lots
-    on the sessions it prints at all.
-
-    KNOWN TOO WEAK FOR YOUNG MARKETS.  1,000 lots on ANY contract admitted SO3
-    from 2018-08 on a 5,103-lot book with 9.8 months trading, which is 39% of
-    that panel and where every SO3 roll pathology lives.  Not yet swept across
-    the book -- see Roll_Journal.md section 4.
-    """
     sel = (d.filter(~pl.col("symbol").str.slice(-1).is_in(list(dead)))
            if dead else d)
     by_day = (sel.group_by("date").agg(pl.col("volume").max().alias("mx"))
@@ -321,47 +134,13 @@ def inception(d: pl.DataFrame, dead: set) -> object:
     return by_day.get_column("date").to_list()[0] if by_day.height else None
 
 
-# ----------------------------------------------------------------------------
-# AS-OF ALIGNMENT
-#
-# The panel does not end on the same date for every market.  ASX closes earliest
-# in the global day, so YAP4 and YXT4 -- the only two `Day`-session instruments
-# in the book -- carry date D while the other 61 are still on D-1, whenever the
-# vendor's update lands between the ASX close (~08:30 CEST) and the US close
-# (~22:00 CEST).  On 2026-08-25 the updater ran at 17:42 CEST, squarely inside
-# that gap.
-#
-# THIS IS A COLLECTION ARTEFACT, NOT A MARKET FACT, and it must not reach the
-# signals.  Using each instrument's own newest bar would make the output a
-# function of WHEN the refresh happened to run: the same pipeline an hour later
-# gives a different alignment, no backtest reproduces the lead-lag, and every
-# cross-sectional estimate -- correlation, vol target, portfolio weight --
-# quietly assumes contemporaneous observations it no longer has.
-#
-# So the panel is squared off at the newest date EVERY instrument has, and bars
-# beyond it wait for the others to catch up.  That costs nothing at execution:
-# signals computed on date D trade each market's next open, and the ASX close is
-# then ~14h old against ES's ~17.5h.  Every instrument trades its next open off
-# a same-dated close, which is the convention a backtest already assumes.
-#
-# Switching YAP4/YXT4 to their All-Sessions twins does NOT fix this -- YAP and
-# YXT end on the same date as YAP4 and YXT4.  Measured, not assumed.
-# ----------------------------------------------------------------------------
-
-STALE_SESSIONS = 3      # further behind as_of than this is a broken feed,
-                        # not the ordinary ragged edge
-QUORUM_FRAC = 0.15      # share of the book that must have traded a date for it
-QUORUM_MIN = 5          # to count as a real session -- see panel_as_of
-EDGE_WINDOW = 40        # recent sessions read per contract to decide the above
+STALE_SESSIONS = 3
+QUORUM_FRAC = 0.15
+QUORUM_MIN = 5
+EDGE_WINDOW = 40
 
 
 def _tail_dates(path: Path, window: int = EDGE_WINDOW) -> list[str]:
-    """The last `window` YYYYMMDD values in a contract file, read from the end.
-
-    Seeks rather than reading whole files: this runs over 15,231 files to decide
-    one date, and reading each in full is the kind of cost that gets a safety
-    check quietly removed from a pipeline.
-    """
     try:
         with path.open("rb") as fh:
             fh.seek(0, 2)
@@ -380,14 +159,10 @@ def _tail_dates(path: Path, window: int = EDGE_WINDOW) -> list[str]:
     return out
 
 
-EDGE_LOOKBACK_DAYS = 15     # quorum window.  Must stay well inside the tail
-                            # EDGE_WINDOW reads, or dates near the far end are
-                            # undercounted by contracts whose tail does not
-                            # reach them -- which read as phantom holidays.
+EDGE_LOOKBACK_DAYS = 15
 
 
 def _contract_last_dates(instruments: list[str] | None = None) -> dict:
-    """{instrument: {file: its last date}}.  One date per contract, cheap."""
     out = {}
     for d in sorted(CONTRACTS.iterdir()):
         if not d.is_dir():
@@ -405,19 +180,6 @@ def _contract_last_dates(instruments: list[str] | None = None) -> dict:
 
 
 def panel_sessions(instruments: list[str] | None = None) -> dict:
-    """{instrument: set of session dates inside the quorum window}.
-
-    WINDOWED, and the window is short on purpose.  as_of only ever needs the
-    last few sessions, and a long window is actively misleading: with a 90-day
-    window the counts said 30 markets were shut in late June, which was not a
-    holiday at all but contracts whose 40-bar tail simply did not reach that
-    far back.  Kept inside the tail, every live contract covers the whole
-    window and the counts mean what they say.
-
-    NOTE this deliberately does NOT decide `edge`.  An instrument whose feed
-    stopped a month ago has nothing in the window and would vanish from here --
-    taking it out of the stale check, which is the one place it must appear.
-    """
     per = _contract_last_dates(instruments)
     newest = max((d for g in per.values() for d in g.values()), default="")
     if not newest:
@@ -429,7 +191,7 @@ def panel_sessions(instruments: list[str] | None = None) -> dict:
         seen: set = set()
         for f, last in files.items():
             if last < cut:
-                continue                      # expired before the window
+                continue
             seen.update(d for d in _tail_dates(f) if d >= cut)
         if seen:
             out[inst] = seen
@@ -437,11 +199,6 @@ def panel_sessions(instruments: list[str] | None = None) -> dict:
 
 
 def panel_edge(instruments: list[str] | None = None) -> dict:
-    """Each instrument's newest bar date.  {instrument: 'YYYYMMDD'}.
-
-    From the COMPLETE scan, not the quorum window: an instrument that stopped
-    reporting has to keep appearing here or the stale check cannot see it.
-    """
     return {i: max(g.values())
             for i, g in _contract_last_dates(instruments).items()}
 
@@ -451,37 +208,6 @@ _AS_OF: tuple[str, dict] | None = None
 
 def panel_as_of(instruments: list[str] | None = None, *,
                 refresh: bool = False) -> tuple[str, dict]:
-    """The latest date that is plausibly a COMPLETE session, and the full edge.
-
-    QUORUM, not min.  The panel ends on different dates for two unrelated
-    reasons and only one of them should hold the pipeline back:
-
-      COLLECTION LAG.  ASX closes earliest in the global day, so YAP4 and YXT4
-      carry a date the other 61 do not have yet whenever the vendor's update
-      lands between the two closes.  On 2026-08-25, 2 instruments of 63.  This
-      is an artefact of WHEN the refresh ran -- a state no backtest ever sees,
-      because a backtest reads a completed panel -- and it must not reach the
-      signals.
-
-      DIFFERENT TRADING CALENDARS.  ASX trades through US holidays and the CME
-      does not.  2026-06-19 (Juneteenth) has 19 instruments of 63; 2026-01-19,
-      02-16, 05-25 and 07-03 are the same shape.  This is not lag: those markets
-      genuinely traded and the others were genuinely shut.  Holding everyone
-      back here would defer real signals roughly six times a year for nothing.
-
-    The two are cleanly separable and the data says so: a holiday leaves 16-50
-    instruments trading, collection lag leaves 2, and nothing observed lands in
-    between.  So a date counts as a real session once a QUORUM of the book has
-    it, and as_of is the latest such date.  `min` -- the first version of this --
-    could not tell them apart and suppressed both.
-
-    Instruments that were SHUT on as_of legitimately sit behind it.  That is why
-    last_date is reported per instrument rather than assumed uniform.
-
-    CACHED for the life of the process: resolving this walks every contract
-    file, and `rule_scores` asks for 63 worksheets in one run.  Pass refresh=True
-    after writing bars -- the pipeline does that once, in stage 1.
-    """
     global _AS_OF
     if _AS_OF is not None and not refresh and instruments is None:
         return _AS_OF
@@ -496,8 +222,6 @@ def panel_as_of(instruments: list[str] | None = None, *,
             counts[d] = counts.get(d, 0) + 1
     need = max(QUORUM_MIN, int(round(len(edge) * QUORUM_FRAC)))
     quorate = [d for d, n in counts.items() if n >= need]
-    # Fall back to the old min() rule if nothing clears quorum -- a book of one
-    # instrument, or a window short enough that no date is shared.
     as_of = max(quorate) if quorate else min(edge.values())
     got = as_of, edge
     if instruments is None:
@@ -506,14 +230,6 @@ def panel_as_of(instruments: list[str] | None = None, *,
 
 
 def report_edge(as_of: str, edge: dict, *, stale: int = STALE_SESSIONS) -> list:
-    """Print the ragged edge and return anything too far behind to be ordinary.
-
-    AHEAD of as_of means the vendor's update caught that market and not the
-    others -- held back until the rest arrive.  BEHIND means either the market
-    was shut on as_of, which is normal and silent, or the feed has stopped,
-    which is not.  Only the second is worth waking someone for, and the only
-    thing separating them is how far behind it has fallen.
-    """
     ahead = sorted(i for i, d in edge.items() if d > as_of)
     behind = sorted((d, i) for i, d in edge.items() if d < as_of)
     print(f"  as_of {as_of}   {len(edge)} instruments")
@@ -522,9 +238,6 @@ def report_edge(as_of: str, edge: dict, *, stale: int = STALE_SESSIONS) -> list:
               f"{', '.join(f'{i} ({edge[i]})' for i in ahead)}")
     lagging = []
     if behind:
-        # Calendar days, not sessions: this needs no exchange calendar to be
-        # right about the only thing it is asked, which is whether a feed has
-        # stopped rather than merely closed for a day.
         a = _dt.date(int(as_of[:4]), int(as_of[4:6]), int(as_of[6:]))
         for d, i in behind:
             b = _dt.date(int(d[:4]), int(d[4:6]), int(d[6:]))
@@ -541,20 +254,6 @@ def report_edge(as_of: str, edge: dict, *, stale: int = STALE_SESSIONS) -> list:
 
 def worksheet(inst: str, start: str, end: str,
               as_of: str | None = "auto") -> pl.DataFrame:
-    """One instrument's worksheet.
-
-    `as_of` squares the panel off at a common date -- see the AS-OF ALIGNMENT
-    note above.  It is applied to the DATA, not to the emit window, so every
-    stateful column (B_V_3, the ratchets, each hold series) accumulates exactly
-    as it would have on that date.  Capping only the output would let state
-    build from bars the run is meant not to know about.
-
-    DEFAULTS TO "auto", which resolves to the newest date every instrument has.
-    On by default because the alternative was opt-in, and an opt-in safety rule
-    is one an unrelated caller forgets: a signal stage that omitted it would
-    silently get the ragged edge back and nothing would say so.  Pass None to
-    disable it deliberately.
-    """
     which = gate(inst)
     date_col, till_col = GATE[which]
     gates = gate_map(inst, which)
@@ -568,11 +267,6 @@ def worksheet(inst: str, start: str, end: str,
         if not d.height:
             raise SystemExit(f"[ABORT] {inst}: no bars at or before {as_of}")
     dead = dead_months(inst)
-    # Dead months are dropped from the DATA, not merely from selection.  Keeping
-    # them made the sheet unreadable where most of the listing is dead: EUA
-    # trades only December, so a 9-session window carried 178 rows of which 9
-    # mattered.  What was skipped is recorded in contract_cycles.csv, which is a
-    # better place for it than 19 inert rows per session.
     if dead:
         d = d.filter(~pl.col("symbol").str.slice(-1).is_in(list(dead)))
     start_at = inception(d, dead)
@@ -580,22 +274,9 @@ def worksheet(inst: str, start: str, end: str,
         d = d.filter(pl.col("date") >= start_at)
     lo, hi = np.datetime64(start, "D"), np.datetime64(end, "D")
 
-    # The streak has to accumulate from BEFORE the window, or B_V_3 reads false
-    # on the first rows of every sheet when it should read true.
-    # Sorted by (date, symbol) ONCE, not per session.  The loop used to call
-    # g.sort("symbol") on every group -- 12,209 separate polars calls for ZC,
-    # each paying full lazy-frame collect overhead to order ~20 rows, and 1.7s
-    # of a 6.2s build.  group_by(maintain_order=True) preserves the frame's row
-    # order inside each group, so pre-sorting gives the identical ordering.
-    #
-    # The order is LOAD-BEARING, not cosmetic: `max()` returns the first of any
-    # tie, so symbol order decides Best_Vol and Best_Oi when two contracts share
-    # a volume.  Changing it would silently change the book.
     warm = (d.filter(pl.col("date") <= pl.lit(hi).cast(pl.Date))
              .sort(["date", "symbol"]))
     streak: dict[str, int] = {}
-    # Carried across sessions like `streak`: a ratchet that starts empty at the
-    # window edge accepts a step it should refuse.
     prev_hold: str | None = None
     prev_forced: str | None = None
     cf_hold: str | None = None
@@ -616,47 +297,25 @@ def worksheet(inst: str, start: str, end: str,
             recs.append({**r, "gate_date": fn, "till": till,
                          "is_passed": passed})
 
-        # Dead months are excluded from SELECTION but their rows stay in the
-        # sheet -- a worksheet that hides what it ignored cannot be audited.
-        # Both "best" columns take the window gate; they part company on what
-        # counts as trading.  `is None or` is load-bearing: a contract with no
-        # gate date has no expiry to be close to and stays eligible.
         def in_window(r):
             return r["till"] is None or r["till"] > BEST_VOL_MIN_CD
 
-        # Best_Vol needs volume by definition: a session nothing traded in has
-        # no volume leader, and saying so is correct rather than unhelpful.
         best_v_pool = [r for r in recs
                        if not r["is_passed"] and r["volume"] > 0 and in_window(r)]
         best_v = (max(best_v_pool, key=lambda r: r["volume"])["symbol"]
                   if best_v_pool else None)
 
-        # Best_Oi does NOT: open interest is the field that SURVIVES a session
-        # the vendor recorded no volume for, which is exactly when a fallback
-        # needs it.  Gating it on volume made a missing field disqualify every
-        # real contract -- CT 1998-01-16.
         best_o_pool = [r for r in recs
                        if not r["is_passed"] and r["open_interest"] > 0
                        and in_window(r)]
         best_o = (max(best_o_pool, key=lambda r: r["open_interest"])["symbol"]
                   if best_o_pool else None)
 
-        # B_V_3: consecutive sessions as the volume leader.  Every contract that
-        # is not the leader today has its count reset, so a single lost session
-        # costs the full streak.
         for r in recs:
             sym = r["symbol"]
             streak[sym] = streak.get(sym, 0) + 1 if sym == best_v else 0
         best_3 = {s for s, n in streak.items() if n >= BV3_SESSIONS}
 
-        # auto_roll: the symbol closest to its gate date; if that one is within
-        # AUTO_ROLL_CD days of it, the next closest instead.  Nothing else.  It
-        # does NOT read volume, open interest or is_passed -- an earlier version
-        # took its candidates from a pool carrying a volume > 0 filter, and a
-        # single quiet session then emptied the column (CGB on Christmas Eve
-        # 1999, holding 29,027 open interest 63 days from notice).  is_passed
-        # needs no test of its own either: a passed contract has till <= 0,
-        # which the <= AUTO_ROLL_CD rule already skips.
         cal = sorted(recs, key=lambda r: rank[r["symbol"]])
         auto = None
         if cal:
@@ -666,38 +325,14 @@ def worksheet(inst: str, start: str, end: str,
             else:
                 auto = first["symbol"]
 
-        # +1_auto_roll_hold: auto_roll's decision, taken one contract further
-        # out.  Where auto_roll holds cal[0] this holds cal[1]; where auto_roll
-        # steps to cal[1] this steps to cal[2].  Same ordering, same window,
-        # same blindness to volume -- the front month is simply never held.
-        #
-        # For a compounded-in-arrears STIR that is the whole game: SO3 and SR3
-        # settle to daily rates compounded over the contract's own reference
-        # quarter, so by the time one is the front month its price is largely
-        # already fixed and the volume has gone.  Holding the front means under
-        # 1,000 lots on 27% (SO3) and 9% (SR3) of sessions against a book in the
-        # hundreds of thousands; one step out that is 0% on both, with the same
-        # 22 rolls, the same zero backward rolls and the same 44-day maturity
-        # IQR.  SO3 median 4,716 -> 44,786 lots.
-        #
-        # NOT a new rule class -- it is auto_roll with the index shifted.  Only
-        # position 2 and beyond would need the rule to step twice.
         plus1 = None
         if cal:
             i = 2 if (cal[0]["till"] is not None
                       and cal[0]["till"] <= AUTO_ROLL_CD) else 1
             plus1 = cal[i]["symbol"] if len(cal) > i else None
 
-        # Hoisted out of the emit loop: Forced_roll_V gates on it, and the two
-        # must not drift apart.  Both None must NOT compare equal -- no pick and
-        # no leader is a failure of the rule, not agreement between absences.
         auto_best_v = auto is not None and best_v is not None and auto == best_v
 
-        # Forced_roll_V: the alternative to auto_roll, offered only where
-        # auto_roll is in doubt.  Nearest contract by gate date that is not
-        # auto_roll's own pick, and clear of the window.  Without the "not equal
-        # to auto_roll" exclusion the column was auto_roll verbatim on all 6,314
-        # populated sessions across the notice group, 2005-2015.
         held = [r for r in recs
                 if r["till"] is not None
                 and r["till"] > FORCED_ROLL_MIN_CD
@@ -707,18 +342,6 @@ def worksheet(inst: str, start: str, end: str,
         forced_best_v = (forced is not None and best_v is not None
                          and forced == best_v)
 
-        # +2: one more step out, both earlier answers struck off -- the third
-        # contract clear of the window.  It exists for the crop-year jump: the
-        # first two columns reach the nearest and second-nearest and no further,
-        # while grains roll old crop to new crop in one jump of two or three
-        # months.  95% of the blanks Test_Hold carried before this column were
-        # that jump.
-        #
-        # The > FORCED_ROLL_MIN_CD test is carried rather than assumed.  It
-        # cannot bind -- every candidate surviving the two exclusions already
-        # passed it for Forced_roll_V, verified over 1,421,027 candidate sets --
-        # but a filter that states its own precondition does not quietly change
-        # meaning when someone edits the line above it.
         held2 = [r for r in held
                  if r["symbol"] != forced and r["till"] > FORCED_ROLL_MIN_CD]
         forced2 = (min(held2, key=lambda r: (r["till"], rank[r["symbol"]]))["symbol"]
@@ -726,14 +349,8 @@ def worksheet(inst: str, start: str, end: str,
         forced2_best_v = (forced2 is not None and best_v is not None
                           and forced2 == best_v)
 
-        # Today's distances, read by every ratchet below.
         till = {r["symbol"]: r["till"] for r in recs}
 
-        # forced_roll_hold: four branches, ratcheted.  Best_Oi where neither
-        # volume branch agrees, and Best_Vol where nothing eligible reports open
-        # interest -- the newest session in any file carries volume and no OI,
-        # because exchanges publish it the next morning.  Without the ratchet
-        # this series reversed 1,605 times, 224 in LE alone.
         forced_hold = ratchet(
             (auto if auto_best_v
              else forced if forced_best_v
@@ -745,25 +362,6 @@ def worksheet(inst: str, start: str, end: str,
         frh_best_v = (forced_hold is not None and best_v is not None
                       and forced_hold == best_v)
 
-        # confirm_forced_roll_hold: the same answer, held back until it repeats.
-        # The ratchet turns a one-session mistake into a permanent one -- RS
-        # rolled to RS-2025N on 2025-03-10 on a single session where volume
-        # touched N, open interest never moved, and the ratchet then refused to
-        # go back because K is nearer: 21 sessions in the wrong contract off one
-        # print.  So a move is confirmed before it is acted on.
-        #
-        # The wait is ABANDONED once the incumbent reaches the window or stops
-        # being listed -- at that point there is nothing left to wait with, and
-        # without the escape the delay pushed the hold INTO the notice window on
-        # 6 RS sessions.  A one-day delay costs nothing mid-contract and
-        # everything at the end of one.
-        #
-        # THE COST IS A LATE ROLL: every genuine move lands one session after
-        # the signal, forever.
-        #
-        # One column, replacing RS_/LT_/CS_forced_roll_hold -- the same
-        # algorithm under three names, each named for the market that wanted it
-        # and computed everywhere regardless.
         cf_cand = ratchet(
             (auto if auto_best_v
              else forced if forced_best_v
@@ -786,9 +384,6 @@ def worksheet(inst: str, start: str, end: str,
             cf_hold = cf_cand
             cf_pending, cf_pending_n = None, 0
 
-        # Test_Hold: first branch that fires, ratcheted.  The third branch is NOT
-        # gated on +2_Forced_Best_V -- it is a fallback, not a third opinion,
-        # which is what ends the invariant the first two branches gave it.
         test_hold = ratchet(
             (auto if auto_best_v
              else forced if forced_best_v
@@ -800,7 +395,7 @@ def worksheet(inst: str, start: str, end: str,
                        and test_hold == best_v)
 
         if np.datetime64(day, "D") < lo:
-            continue                      # warm-up only, not emitted
+            continue
 
         for r in recs:
             blank = r["is_passed"]
@@ -815,10 +410,6 @@ def worksheet(inst: str, start: str, end: str,
                 "Best_Vol": "" if blank else str(r["symbol"] == best_v).lower(),
                 "Best_Oi": "" if blank else str(r["symbol"] == best_o).lower(),
                 "B_V_3": "" if blank else str(r["symbol"] in best_3).lower(),
-                # NOT blanked on passed rows: auto_roll is a property of the
-                # SESSION, not of the contract in this row, so the answer is the
-                # same everywhere and holds even on the contract just rolled out
-                # of.  The blanking convention belongs to the per-contract flags.
                 "auto_roll": auto or "",
                 "Auto_Best_V": str(auto_best_v).lower(),
                 "Forced_roll_V": forced or "",
@@ -840,17 +431,6 @@ def worksheet(inst: str, start: str, end: str,
 
 
 def means(df: pl.DataFrame) -> pl.DataFrame:
-    """pl.mean() of every column that has one.  Booleans read as share true.
-
-    Blank flags are null, NOT false, so they are excluded from the denominator
-    rather than counted against: a passed contract is out of the running, not
-    losing it.  date/symbol/gate date/the hold series are strings with no mean.
-
-    Read row-wise here, which is what pl.mean() means, but the session-level
-    columns are repeated on every row of a session -- so this weights each
-    session by how many months were listed.  `session_means` gives the
-    unweighted one; they are not the same statistic.
-    """
     exprs = []
     for c in df.columns:
         if c in BOOL_COLS:
@@ -863,7 +443,6 @@ def means(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def session_means(df: pl.DataFrame) -> pl.DataFrame:
-    """The session-level columns, one row per session instead of per contract."""
     one = df.unique(subset=["date"], keep="first").sort("date")
     return one.select([
         pl.when(pl.col("Auto_Best_V") == "true").then(1.0).otherwise(0.0)
@@ -874,7 +453,6 @@ def session_means(df: pl.DataFrame) -> pl.DataFrame:
 
 
 def check(got: pl.DataFrame, ref_path: Path) -> int:
-    """Compare against a reference worksheet, column by column."""
     ref = pl.read_csv(ref_path, infer_schema_length=0)
     got = got.with_columns([pl.col(c).cast(pl.Utf8) for c in got.columns])
     ref = ref.with_columns([pl.col(c).fill_null("").cast(pl.Utf8) for c in ref.columns])
@@ -888,7 +466,6 @@ def check(got: pl.DataFrame, ref_path: Path) -> int:
             print(f"[FAIL] missing column {c}")
             bad += 1
             continue
-        # numeric columns: compare as numbers, not as formatted strings
         try:
             a = ref.get_column(c).cast(pl.Float64, strict=True)
             b = got.get_column(c).cast(pl.Float64, strict=True)
@@ -937,9 +514,6 @@ def main() -> int:
     if args.check:
         return check(df, Path(args.check))
 
-    # One working file, overwritten each run.  A per-window filename accumulates
-    # a directory of half-remembered snapshots; the window is an argument, not
-    # an artefact.
     out = Path(args.out) if args.out else WORKING
     df.write_csv(out)
     with pl.Config(tbl_rows=30, tbl_cols=28, tbl_width_chars=320):

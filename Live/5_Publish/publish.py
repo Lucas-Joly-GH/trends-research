@@ -1,42 +1,3 @@
-"""
-Publish the 2026 run to `docs/` for the public results page.
-
-    publish.py                 write docs/data/*.json
-    publish.py --check         build in memory and validate, write nothing
-    publish.py --stdout        print the summary JSON
-
-------------------------------------------------------------------------------
-THE WHITELIST IS THE POINT OF THIS FILE
-------------------------------------------------------------------------------
-
-`trends-research` is public and the rest of the pipeline is built on the rule
-that vendor data never reaches it.  This is the one deliberate exception, and
-the carve-out is narrow -- 2026 sessions only, open and close only,
-non-commercial.  `Live/README.md` states it in full.
-
-Prices are published ON PURPOSE.  A results table reading "SELL 37 6B" cannot be
-checked by anybody, and an unverifiable results page is worth less than no page:
-the reader has to be able to recompute a day by hand,
-
-    N x (close - open) x pointsize x FX  =  the P&L we claim
-
-which needs the quantity, both prices, and the contract spec.  All three are
-either ours or exchange-published.
-
-EVERY OUTPUT IS FILTERED THROUGH AN EXPLICIT COLUMN LIST and the build FAILS if
-anything outside it appears.  That direction matters: a blacklist ("drop
-`SIGNAL`") fails open the day someone adds a column upstream, and this pipeline
-adds columns constantly -- `pnl_gap_USD` and `pnl_day_USD` appeared the same
-afternoon open execution landed.  A whitelist fails closed: a new column is
-simply not published until someone names it here.
-
-WHAT IS DELIBERATELY NEVER PUBLISHED, even though it is right there in the
-frames: the Panama-adjusted series (`Continuous_C`/`Continuous_O`), the risk
-estimate (`price_vol_USD_ann`), the forecast (`SIGNAL`), the gates, `IDM`, `w_i`
-and everything else in the journal's provenance block.  Those are the model, not
-the record, and the model is what the paper is for.  Nor anything dated before
-2026-01-02, at any time, for any reason.
-"""
 from __future__ import annotations
 
 import argparse
@@ -67,9 +28,6 @@ DOCS = REPO / "docs"
 OUT = DOCS / "data"
 PAGES = ["index.html", "journal.html", "pnl.html", "mapping.html",
          "qa.html", "expectations.html"]
-# Every asset the pages load by name, and the tag that carries its version.
-# Both are stamped and both feed the hash, so a palette change busts the cache
-# exactly as a script change does.
 ASSETS = ["app.js", "site.css"]
 TAGS = {
     "app.js": (re.compile(r'<script src="app\.js(?:\?v=[A-Za-z0-9]+)?"></script>'),
@@ -79,17 +37,9 @@ TAGS = {
                  '<link rel="stylesheet" href="site.css?v={v}">'),
 }
 
-# The window.  Nothing before this is ever published, and the guard below is not
-# a filter -- it aborts.  A filter would quietly publish a truncated series if
-# someone changed START_DATE; an abort makes them come here and mean it.
 WINDOW_START = "2026-01-02"
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
-# The reference sample for the expectations page, and THE ONE PLACE IN THIS FILE
-# THAT LOOKS BEFORE THE WINDOW.  It is not a hole in the carve-out: what leaves
-# `build_expectations` is moments, quantiles, binned counts and test statistics.
-# No price, no position and no dated row before 2026-01-02 is written from it,
-# and `_dates_guard` still governs everything that carries a date.
 BACKTEST_START = "1990-01-02"
 
 EXECUTED_COLS = ["instrument", "contract", "action", "quantity", "kind",
@@ -104,33 +54,20 @@ OUTSTANDING_COLS = ["instrument", "contract", "action", "quantity",
                     "carried_sessions", "reason"]
 DAILY_COLS = ["date", "equity_USD", "drawdown", "gross_pnl_USD",
               "commission_USD", "interest_USD"]
-# The attribution page.  ONLY the realised dollar result per instrument: the
-# risk estimate, the forecast, the gates, IDM and w_i stay unpublished exactly
-# as the module docstring says, so a reader sees what each market MADE without
-# seeing how it was sized.
 PNL_COLS = ["instrument", "gross_pnl_USD", "session", "held"]
 BOOK_COLS = ["opening_equity_USD", "gross_pnl_USD", "commission_USD",
              "interest_USD", "closing_equity_USD", "interest_base_USD",
              "interest_from_date", "calendar_days", "rate_annual_pct"]
 PNL_INDEX_COLS = ["date", "gross_pnl_USD", "net_total_USD"]
-# The contract specs. Publishing them is the point of the carve-out rather than
-# an exception to it: `qty x (close - open) x pointsize x FX` is the arithmetic
-# a reader is invited to check, and without the point value they cannot.
 MAPPING_COLS = ["instrument", "description", "asset_class", "pointsize",
                 "currency", "exchange", "cost_rt_local", "tick_size"]
-# Names that must never reach a published byte. The source file's first column
-# is `norgate_code`; the carve-out is non-commercial use with the provider
-# unnamed, and a column header is a name.
-# THE Q&A PAGE.  Four questions a reader asks that the other pages cannot
-# answer: is this just long equities, where did the money come from, what does
-# the book hold right now, and what did each month do.
 QA_ATTRIB_COLS = ["asset_class", "gross_pnl_USD", "share"]
 QA_CUM_COLS = ["date", "asset_class", "cum_USD"]
 QA_POS_COLS = ["instrument", "asset_class", "contracts", "notional_USD",
                "side", "share_of_gross"]
 QA_WORST_COLS = ["date", "bench_ret", "book_ret"]
 QA_VOL_COLS = ["date", "realised"]
-BH_BUFFER = 0.10        # Carver eq. 3.36, as the engine uses it
+BH_BUFFER = 0.10
 QA_BENCH_COLS = ["date", "book", "bh", "spx"]
 QA_BSTAT_COLS = ["key", "name", "total", "vol", "sharpe", "max_dd"]
 EXPECT_MOM_COLS = ["horizon", "n", "mean", "median", "sd", "skew", "kurt",
@@ -173,12 +110,6 @@ def _f(x):
 
 
 def _guard(name: str, rows: list[dict], allowed: list[str]) -> list[dict]:
-    """Refuse to publish a key nobody named.
-
-    Called on the FINISHED rows rather than on the frame, so it sees exactly
-    what lands in the file -- a column renamed between here and the writer would
-    otherwise slip past a check made upstream of it.
-    """
     for r in rows:
         extra = sorted(set(r) - set(allowed))
         if extra:
@@ -198,36 +129,13 @@ def _dates_guard(name: str, rows: list[dict], key: str = "date") -> None:
             f"only. Nothing was written.")
 
 
-# FIELDS ALLOWED TO CARRY A PRE-WINDOW DATE, each with the reason it may.
-# The sweep below refuses everything else, so adding a key here is a decision
-# somebody has to make on purpose and leave a note about.
 _WINDOW_EXEMPT = {
-    # The first live session accrues interest from the last session of 2025.
-    # It is a boundary, not an observation: no price, no position, and the
-    # reader needs it to check `interest = base x rate x days` by hand.
     "interest_from_date",
-    # The expectations page states the span of its reference sample. Labels
-    # for a window whose CONTENTS are published only as moments and counts.
     "backtest_start", "backtest_end",
 }
 
 
 def _window_sweep(name: str, payload) -> None:
-    """Refuse a pre-window date ANYWHERE in a finished payload.
-
-    `_dates_guard` was called on four hand-picked row lists and keyed on the
-    literal field name "date", so it inspected exactly the places somebody
-    remembered to point it at.  It never saw a nested block: the per-session
-    `book` dict published `interest_from_date: 2025-12-31` for months, and the
-    file's own docstring meanwhile promised "nor anything dated before
-    2026-01-02, at any time, for any reason".  The promise was wider than the
-    check.
-
-    This walks the whole structure -- every dict, every list, every string --
-    and flags anything shaped like a date that falls before the window, under
-    whatever name it happens to be stored.  Legitimate exceptions are named in
-    `_WINDOW_EXEMPT` above and nowhere else.
-    """
     bad = []
 
     def walk(o, path):
@@ -254,14 +162,6 @@ def _window_sweep(name: str, payload) -> None:
 
 
 def run_stamp() -> str:
-    """When the DATA was last rebuilt, which is what the site's "Updated" means.
-
-    Not `generated_at`. Re-running this publisher on week-old numbers would
-    refresh a "generated" line and tell a reader the figures are current when
-    nothing about them is, which is the failure the stale-data note in
-    `Publication_Journal.md` describes. `Update.py` stamps the end of every run;
-    this reads it and refuses the two cases where the stamp cannot be trusted.
-    """
     if not RUN_STAMP.is_file():
         raise SystemExit(
             f"[ABORT] no pipeline run stamp at {RUN_STAMP}. The site reports "
@@ -274,10 +174,6 @@ def run_stamp() -> str:
             f"verification failure(s) at {st.get('completed_at')}. Publishing "
             f"would put unverified numbers on a public page. Nothing was "
             f"written.")
-    # Same hole from the other side: a run with `--no-verify` reports zero
-    # failures because nothing was checked. Update.py skips stage 6 in that
-    # case, but this file is also run by hand, and by hand is exactly when
-    # somebody reaches for --no-verify.
     if not st.get("verified", True):
         raise SystemExit(
             f"[ABORT] the last pipeline run at {st.get('completed_at')} was "
@@ -292,13 +188,6 @@ def run_stamp() -> str:
 
 
 def _pages_guard() -> None:
-    """Every page must carry a stampable script tag, checked before anything runs.
-
-    A page whose tag has been edited into a shape the stamper does not recognise
-    would silently keep serving whatever version a reader already had cached,
-    and the symptom -- new markup running against an old `app.js` -- looks like
-    a layout bug rather than a caching one. Cheaper to refuse to publish.
-    """
     for name in PAGES:
         f = DOCS / name
         if not f.is_file():
@@ -312,31 +201,10 @@ def _pages_guard() -> None:
                     f"data fetch inherits it. Nothing was written.")
 
 
-# Wall-clock fields, excluded from the cache stamp.  ANY NEW TIMESTAMP IN
-# `meta` BELONGS HERE -- see build_stamp.
 _WALL = ("generated_at", "updated_at")
 
 
 def build_stamp(latest: dict) -> str:
-    """Eight hex characters over the script AND the data it will run against.
-
-    Not a counter -- nobody has to remember to bump it -- and not a hash of
-    `app.js` alone, because the dangerous staleness is NEW DATA AGAINST AN OLD
-    SCRIPT, so the stamp has to move when either changes.
-
-    EVERY WALL-CLOCK FIELD IS EXCLUDED, deliberately -- see `_WALL` below, and
-    add to it rather than to this sentence. Leaving one in would change the
-    stamp on every run, rewrite four HTML files that did not change, and
-    re-fetch everything for readers whose cached copy was already correct. A
-    cache version that always changes carries the same amount of information as
-    one that never does. Republishing identical data is a no-op down to the byte.
-
-    This regressed once already: the docstring named `generated_at` and the code
-    popped `generated_at`, so `updated_at` -- added later for the "Updated" line
-    -- sailed straight into the hash and the property quietly stopped holding
-    while every test still passed. Nothing here can catch that but the loop, so
-    the loop is the specification.
-    """
     payload = json.loads(json.dumps(latest))
     for _wall in _WALL:
         payload.get("meta", {}).pop(_wall, None)
@@ -368,7 +236,7 @@ def build() -> tuple[dict, dict, list, dict]:
             raise SystemExit(f"[ABORT] missing {f}; run the pipeline first")
     _pages_guard()
     tb = _load(BOOK_PY, "tb")
-    pf = _load(PORT_PY, "pf")   # for the one definition of `cost_ann`
+    pf = _load(PORT_PY, "pf")
     P = pl.read_parquet(PORT).filter(pl.col("started"))
     if not P.height:
         raise SystemExit("[ABORT] portfolio has no started sessions")
@@ -388,18 +256,9 @@ def build() -> tuple[dict, dict, list, dict]:
     ist = np.nan_to_num(P.get_column("interest_USD").to_numpy().astype(float))
     gpnl = np.nan_to_num(P.get_column("pnl_USD").to_numpy().astype(float))
     nav = np.nan_to_num(P.get_column("NAV").to_numpy().astype(float), nan=1.0)
-    # Trading P&L after commission, before interest -- the numerator of
-    # `net_ret`, and the half of the window's move that is not the cash leg.
     npnl = gpnl - cost
     sd = float(nr.std(ddof=0))
 
-    # ---- the fill price, which is what makes a row checkable ---------------
-    #
-    # The model executes at the OPEN of the fill session -- that is what
-    # `execute_at` means and what stage 3 now prices.  Publishing the decision
-    # close without it would show the number the order was DECIDED on and let a
-    # reader assume it was the number it TRADED at, which is precisely the
-    # confusion the `decision_close` rename was meant to end.
     exe = pl.read_parquet(BK / "executed.parquet")
     opens: dict[str, dict] = {}
     ex_rows = []
@@ -427,7 +286,6 @@ def build() -> tuple[dict, dict, list, dict]:
                for r in pend.iter_rows(named=True)]
     _guard("pending", pd_rows, PENDING_COLS)
 
-    # The open book, from the journal if it has one for this session.
     as_of = d[-1]
     ot_rows: list[dict] = []
     op = JOURNAL / "outstanding" / as_of[:4] / f"{as_of}.parquet"
@@ -456,52 +314,19 @@ def build() -> tuple[dict, dict, list, dict]:
         "equity_start": round(float(eq[0]), 2),
         "equity_end": round(float(eq[-1]), 2),
         "net_ann_ret": round(float(nr.mean() * 256), 6),
-        # TWO ANNUALISATIONS, BOTH PUBLISHED, because they answer different
-        # questions and the difference is large on a part-year window.
-        # `net_ann_ret` is arithmetic -- mean daily return x 256 -- which is the
-        # convention the volatility and the Sharpe use, so it is the one that
-        # belongs beside them.
-        #
-        # THEY MUST BE ON THE SAME BASIS OR THE COMPARISON IS A LIE.  `net_cagr`
-        # is the EQUITY curve's growth rate, and equity accrues interest, so it
-        # includes the cash leg that `net_ann_ret` excludes by construction.
-        # Shown side by side that read as a compounding effect: 9.62% against
-        # 13.77%, a 4.15pp gap, of which 3.62pp was simply interest present in
-        # one line and absent from the other.  `cagr_trading` compounds
-        # `net_ret` itself -- same series as the arithmetic mean, same basis as
-        # the Sharpe -- and the honest gap is 0.11pp.  `net_cagr` is kept in the
-        # payload because the equity growth rate is a real number a reader may
-        # want; it is no longer the one displayed beside the arithmetic rate.
         "net_cagr": round(float((eq[-1] / eq[0]) ** (256.0 / len(d)) - 1.0), 6)
                     if eq[0] > 0 and len(d) else None,
         "cagr_trading": round(float(np.prod(1.0 + nr) ** (256.0 / len(d)) - 1.0), 6)
                         if len(d) else None,
-        # The headline window return SPLIT INTO ITS TWO SOURCES.  Dollars over
-        # the opening balance rather than compounded returns, because these two
-        # have to add up to `equity_end / equity_start - 1` on screen and
-        # compounded parts do not.
         "window_ret_trading": round(float(npnl.sum() / eq[0]), 6) if eq[0] else None,
         "window_ret_interest": round(float(ist.sum() / eq[0]), 6) if eq[0] else None,
         "net_ann_vol": round(float(sd * math.sqrt(256)), 6),
         "net_sharpe": round(float(nr.mean() / sd * math.sqrt(256)), 4) if sd else None,
         "max_drawdown": round(float(dd.min()), 6),
-        # A RATE, AND THE AMOUNT IT CAME FROM.  `cost_ann` is annualised the
-        # same way every other rate here is -- a daily mean x 256 -- so it says
-        # what commission costs per YEAR at this trading pace.  On its own it
-        # read as a fee levied on capital; published beside the dollars actually
-        # paid over the window it cannot.
-        #
-        # CALLED, NOT RESTATED.  This used to be `mean(cost[t] / NAV[t]) * 256`
-        # here and `mean(gross_ret - net_ret) * 256` in stage 3 -- the same
-        # quantity over two different bases, 1.4922% against 1.4938%, identical
-        # at the two decimals the page prints. Stage 3 owns the definition.
         "cost_ann": round(pf.cost_ann(gr, nr), 6),
         "cost_window_USD": round(float(cost.sum()), 2),
         "interest_ann": round(float((tot - nr).mean() * 256), 6),
         "n_positions": int(npos[-1]) if len(npos) else 0,
-        # TWO DIFFERENT FACTS, BOTH KEPT. `updated_at` is when the numbers were
-        # last rebuilt and is what the page shows; `generated_at` is when this
-        # file was written, which moves when only the publisher is re-run.
         "updated_at": run_stamp(),
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
     }
@@ -517,18 +342,6 @@ def build() -> tuple[dict, dict, list, dict]:
 
 
 def build_days(tb, led, opens: dict) -> tuple[list[dict], dict]:
-    """One file per session: what was GIVEN that evening, what FILLED that open.
-
-    The journal page needs to answer "what happened on this date", and answering
-    it from one big file would mean shipping every order to every visitor who
-    wants one day.  Per-date files keep a page load to a couple of kilobytes and
-    make the archive browsable by URL.
-
-    GIVEN and EXECUTED ARE DIFFERENT SETS ON THE SAME DATE, which is the whole
-    point of showing both: what was decided on D's close goes to market at the
-    NEXT open, and what filled at D's open was decided the session before.  A
-    page that showed only one would quietly imply they were the same trades.
-    """
     dec, exe = {}, {}
     for r in led.iter_rows(named=True):
         dec.setdefault(r["decision_date"], []).append(r)
@@ -567,17 +380,6 @@ def build_days(tb, led, opens: dict) -> tuple[list[dict], dict]:
 
 
 def build_mapping() -> list[dict]:
-    """`instrument_mapping.csv`, with the provider renamed out of it.
-
-    THE RENAME IS NOT COSMETIC.  The source column is `norgate_code`, and the
-    carve-out this whole file exists to enforce is non-commercial use with the
-    data provider unnamed anywhere on the site.  A column header is a name, so
-    it becomes `instrument` -- which is what every other page already calls it.
-
-    Checked rather than remembered: the finished payload is searched for the
-    forbidden words before it can be written.  A rename is the kind of thing
-    that survives one edit and gets undone by the next.
-    """
     f = LIVE / "instrument_mapping.csv"
     if not f.is_file():
         raise SystemExit(f"[ABORT] missing {f}")
@@ -602,19 +404,6 @@ def build_mapping() -> list[dict]:
 
 
 def _bh_book() -> tuple[dict, dict]:
-    """Per-date P&L and commission for the forecast-pinned-at-+10 book.
-
-    Reproduces the engine's own arithmetic rather than approximating it: whole
-    contracts by truncation, the 3.36 buffer against the position actually
-    held, positions carried through a session the market did not have, the gap
-    leg on the instrument's OWN sessions, and a roll billed as two legs.
-
-    VALIDATED BY CONSTRUCTION: fed the real `N_raw` instead of the pinned one,
-    this same code reproduces the published equity curve to $0.0000. That check
-    lives in the pipeline's verification, not here, because a benchmark drawn
-    from a broken replica would be measuring this function rather than the
-    absence of a signal.
-    """
     import csv as _csv
     spec = {r["norgate_code"]: r for r in
             _csv.DictReader((LIVE / "instrument_mapping.csv").open(encoding="utf-8"))}
@@ -674,7 +463,7 @@ def _bh_book() -> tuple[dict, dict]:
                             + np.nan_to_num(Nb1 * (CCb - COb) * ps * FXb))
 
         roll = np.zeros(n, bool)
-        roll[1:] = (H[1:] != H[:-1]) & (H[1:] != None) & (H[:-1] != None)  # noqa
+        roll[1:] = (H[1:] != H[:-1]) & (H[1:] != None) & (H[:-1] != None)
         units = np.where(roll, np.abs(N1) + np.abs(N), np.abs(N - N1))
         c = np.nan_to_num(units * (rt / 2.0) * FX)
         pend = 0.0
@@ -691,19 +480,6 @@ def _bh_book() -> tuple[dict, dict]:
 
 
 def build_qa() -> dict:
-    """The Q&A payload: four questions the other pages cannot answer.
-
-    BENCHMARK IS ES, THE BOOK'S OWN S&P FUTURE, and that is deliberate. Its
-    2026 opens and closes are already published here under the same carve-out
-    as every other contract, so answering "is this just long equities" costs no
-    new data source and no new licence.
-
-    THE CORRELATION IS PUBLISHED AS ONE NUMBER WITH ITS INTERVAL, not as a
-    rolling series. On this sample a 60-session rolling correlation moves over
-    a range of 0.56 while the 95% interval on any single window is +/-0.26 --
-    wider than the whole range it travels. A reader would read the wiggles as
-    information and every one of them would be noise.
-    """
     import math
 
     port = pl.read_parquet(PORT).sort("date")
@@ -713,7 +489,6 @@ def build_qa() -> dict:
     ret = port.get_column("net_ret").to_numpy()
     cls = {r["instrument"]: r["asset_class"] for r in build_mapping()}
 
-    # ---- is this just long equities? ------------------------------------
     tbf = _load(BOOK_PY, "tb_qa").BOOK / "ES.parquet"
     es = (pl.read_parquet(tbf, columns=["date", "Continuous_C"])
             .sort("date").filter(pl.col("date") >= WINDOW_START))
@@ -734,7 +509,6 @@ def build_qa() -> dict:
          "bench_ret": round(float(E[i]), 6), "book_ret": round(float(B[i]), 6)}
         for i in order], QA_WORST_COLS)
 
-    # ---- where did the money come from? ---------------------------------
     tot: dict[str, float] = {}
     cum_rows, running = [], {}
     for f in sorted(POS.glob("*.parquet")):
@@ -759,7 +533,6 @@ def build_qa() -> dict:
                              "cum_USD": round(acc[k], 2)})
     _guard("qa attribution_cum", cum_rows[:1], QA_CUM_COLS)
 
-    # ---- what does it hold right now? ------------------------------------
     last = dates[-1]
     pos = []
     for f in sorted(POS.glob("*.parquet")):
@@ -781,30 +554,12 @@ def build_qa() -> dict:
     pos.sort(key=lambda x: -abs(x["notional_USD"]))
     _guard("qa positions", pos, QA_POS_COLS)
 
-    # ---- how much of the risk budget is actually used? -------------------
-    #
-    # A ROLLING LINE IS DEFENSIBLE HERE AND WAS NOT FOR THE CORRELATION, and the
-    # difference is the ratio of signal to standard error.  A vol estimate over
-    # w sessions carries SE ~ sigma/sqrt(2w): at w=63 that is about 0.7 points
-    # against a 12.7-point gap to the 20% target -- roughly nineteen standard
-    # errors.  The rolling correlation moved inside its own error bar; this does
-    # not come close to touching the target within many multiples of its.
     W = 63
     vol = _guard("qa vol", [
         {"date": dates[i],
          "realised": round(float(ret[i - W:i].std(ddof=0) * math.sqrt(256)), 6)}
         for i in range(W, len(ret) + 1) if i < len(dates)], QA_VOL_COLS)
 
-    # ---- how does it look against benchmarks? ----------------------------
-    #
-    # BUY AND HOLD IS THIS BOOK WITH THE FORECAST PINNED AT +10, not an index
-    # and not an equal-weight basket. The sizer is linear in the forecast, so
-    # `N_raw * (10 / SIGNAL)` is the position the same machinery would have
-    # taken had the signal always said "long, normal conviction": same 63
-    # markets, same 20% target, same IDM, same truncation, same 3.36 buffer,
-    # same cost model. The only difference is the timing, which is the only
-    # thing the strategy claims to add -- so the gap between the two lines is
-    # attributable to it rather than to universe or sizing.
     bh_pnl, bh_cost = _bh_book()
     eq_bh, e, itr = [], float(eq[0]), 0.0
     for i, dd_ in enumerate(dates):
@@ -813,9 +568,6 @@ def build_qa() -> dict:
         itr = e * float(port.get_column("rf_accrual_next").to_numpy()[i] or 0.0)
         eq_bh.append(e)
 
-    # $100m long the S&P through ES, fully collateralised: close-to-close on the
-    # roll-adjusted series, which approximates the index TOTAL return because a
-    # futures price already carries the cost of carry.
     spx, lvl = [], float(eq[0])
     for i, dd_ in enumerate(dates):
         if i and dd_ in bench:
@@ -850,9 +602,6 @@ def build_qa() -> dict:
                        "max_dd": round(dd_, 6)})
     _guard("qa bench stats", bstats, QA_BSTAT_COLS)
 
-    # THE COMPARISON THE RAW TABLE HIDES: the book ran at a fraction of the
-    # benchmark's risk, so a return read straight off it understates what the
-    # same risk would have bought.
     kx = raw_st["bh"][1] / raw_st["book"][1] if raw_st["book"][1] else 1.0
     scaled = {"vol_ratio": round(kx, 3),
               "scaled_total": round(raw_st["book"][0] * kx, 6),
@@ -879,27 +628,7 @@ def build_qa() -> dict:
     }
 
 
-
 def build_expectations() -> dict:
-    """What the backtest says the book should look like, against what it did.
-
-    THE QUESTION THIS ANSWERS IS NOT "DID IT WORK".  Every other page measures
-    performance, and 171 sessions cannot settle that -- the standard error on
-    a Sharpe at this sample size is about 1.6. It asks the answerable question
-    instead: does the live run BEHAVE like the thing the backtest describes?
-    Distributional shape converges far faster than a mean does, so a sample too
-    small to judge the return is large enough to judge the character.
-
-    THE BACKTEST IS SIMULATED HERE, NOT READ.  The production run starts
-    2026-01-02, so 1990-2025 exists in no artifact on disk. `simulate()` is
-    called in memory with the production settings and only the start date
-    moved; nothing is written, and the live Portfolio.parquet is untouched.
-    That costs about six seconds and keeps the reference honest -- a cached
-    summary would silently describe an older engine after any change to it.
-
-    PUBLISHED AS SUMMARY ONLY: moments, quantiles, binned counts and test
-    statistics. The 9,351 daily returns behind them stay off the site.
-    """
     import math
     from statistics import NormalDist
 
@@ -957,20 +686,17 @@ def build_expectations() -> dict:
         _mom(_agg(lv, lv_dates, _iso_week), "weekly"),
     ], EXPECT_MOM_COLS)
 
-    # ---- the shape, as counts rather than as 9,351 numbers ----------------
     lo, hi = -0.045, 0.045
     edges = [lo + (hi - lo) * i / 60 for i in range(61)]
     bc, _e = np.histogram(np.clip(bt, lo, hi), bins=edges)
     lc, _e = np.histogram(np.clip(lv, lo, hi), bins=edges)
 
-    # ---- is the live window a plausible draw from the backtest? -----------
     s = np.sort(bt)
     ls = np.sort(lv)
     emp = np.searchsorted(s, ls, side="right") / len(s)
     d_stat = float(np.max(np.abs(emp - np.arange(1, len(ls) + 1) / len(ls))))
     crit = 1.36 / math.sqrt(len(ls))
 
-    # ---- VaR and CVaR, three ways -----------------------------------------
     mu, sd = float(bt.mean()), float(bt.std(ddof=0))
     zz = (bt - mu) / sd
     S, K = float((zz ** 3).mean()), float((zz ** 4).mean() - 3)
@@ -978,10 +704,6 @@ def build_expectations() -> dict:
     for a in (0.95, 0.99, 0.995, 0.999):
         q = ND.inv_cdf(1 - a)
         nv = mu + sd * q
-        # Cornish-Fisher: the normal quantile corrected for the observed third
-        # and fourth moments. Shown because it closes most of the gap at 99%
-        # and then OVERSHOOTS in the far tail, which is the honest picture of
-        # what a moment correction can and cannot do.
         zc = (q + (q * q - 1) * S / 6 + (q ** 3 - 3 * q) * K / 24
               - (2 * q ** 3 - 5 * q) * S * S / 36)
         hv = float(np.quantile(bt, 1 - a))
@@ -995,8 +717,6 @@ def build_expectations() -> dict:
             "understate": round(hcv / ncv - 1, 4)})
         obs = int((lv < hv).sum())
         exp = len(lv) * (1 - a)
-        # Kupiec unconditional coverage: is the BREACH RATE right?  -2 log of
-        # the likelihood ratio, chi-square with one degree of freedom.
         p_hat = obs / len(lv) if len(lv) else 0.0
         if 0 < p_hat < 1:
             lr = -2 * (((len(lv) - obs) * math.log(a) + obs * math.log(1 - a))
@@ -1012,16 +732,6 @@ def build_expectations() -> dict:
     _guard("expect var", var_rows, EXPECT_VAR_COLS)
     _guard("expect breaches", breaches, EXPECT_BREACH_COLS)
 
-    # DRAWDOWN IS MEASURED ON EQUITY, NOT ON `net_ret`, and the distinction is
-    # worth 33 basis points here.  `net_ret` is an EXCESS return -- it carries
-    # no interest -- so compounding it describes an account that earned nothing
-    # on its collateral and troughs deeper than the real one: -5.93% against
-    # -5.60% over the live window, the gap being the $2.6m of interest.  The
-    # Overview reports the account, so this page reports the account too;
-    # publishing a second "worst drawdown" that disagreed with the front page
-    # by a quarter of a point would be a defect, not a nuance.  The moments and
-    # the VaR above stay on `net_ret`, which is the strategy rather than the
-    # account, and matches the volatility the Overview quotes.
     def _dd(equity):
         e = np.asarray(equity, dtype=float)
         return e / np.maximum.accumulate(e) - 1.0
@@ -1029,19 +739,6 @@ def build_expectations() -> dict:
     bdd, ldd = _dd(bt_eq), _dd(lv_eq)
     pct = float((bdd < ldd.min()).mean())
 
-    # ------------------------------------------------------------------
-    # THE CHART PAYLOADS.  Everything below is drawn, not narrated.
-    #
-    # ON DATES: `_dates_guard` refuses any row dated before the window, and
-    # nothing here evades it.  The live return series IS dated and IS passed
-    # through it.  The annual series is keyed by `year`, an integer aggregate
-    # of a whole calendar year of the strategy's own output -- 36 numbers from
-    # which no session, no price and no position can be recovered -- and the
-    # histograms are counts in unlabelled buckets.  Those are summary figures
-    # of the same kind as the moments above, which is the thing the window
-    # rule permits; a dated session row before 2026-01-02 is the thing it
-    # forbids, and none is written.
-    # ------------------------------------------------------------------
     def _bins(x, lo, hi, k):
         x = np.asarray(x, dtype=float)
         e = [lo + (hi - lo) * i / k for i in range(k + 1)]
@@ -1066,15 +763,10 @@ def build_expectations() -> dict:
                     [{"year": int(y), "ret": round(float(v), 6)}
                      for y, v in zip(yr_key, yr)], EXPECT_ANNUAL_COLS)
 
-    # QUANTILE-QUANTILE: each live return against the backtest return at the
-    # same plotting position.  A straight line on the diagonal is the whole
-    # KS test, read off a picture instead of a statistic.
     n_l = len(lv)
     qq = [[round(float(np.quantile(bt, (i + 0.5) / n_l)), 6),
            round(float(v), 6)] for i, v in enumerate(np.sort(lv))]
 
-    # THE SWEEP: the three methods as the confidence level moves, which is
-    # where the normal assumption visibly comes apart.
     curve = []
     for i in range(46):
         a = 0.90 + (0.999 - 0.90) * i / 45
@@ -1108,9 +800,6 @@ def build_expectations() -> dict:
         "dd_backtest_worst": round(float(bdd.min()), 6),
         "dd_live_worst": round(float(ldd.min()), 6),
         "dd_percentile": round(pct, 4),
-        # LOW quantiles, because a drawdown is negative: `quantile(bdd, 1.0)`
-        # is the shallowest point in the series -- zero, at every high-water
-        # mark -- and reporting it as "the worst" would print 0.00%.
         "dd_quantiles": [round(float(np.quantile(bdd, q)), 6)
                          for q in (0.5, 0.1, 0.01, 0.0)],
         "dd_underwater": round(float((bdd < -0.0001).mean()), 4),
@@ -1120,47 +809,18 @@ def build_expectations() -> dict:
 
 
 def build_pnl() -> tuple[list[dict], dict]:
-    """One balance sheet per session: every instrument's gross, then the book.
-
-    COMMISSION AND INTEREST COME FROM THE STATEMENT, NOT FROM THE POSITION
-    FILES, and that is deliberate.  The per-instrument `cost_lag_USD` series
-    drops a cost when an instrument's own next session is not the union grid's
-    next row -- on 2026-01-19 it loses 6N's $127.50, because 6N went flat on
-    01-16 and its next open is 01-20 while the statement books the charge on the
-    19th.  $127.50 against $1.06m of 2026 commission is immaterial to any figure
-    on the site, but a balance sheet that does not add up is worthless, so the
-    total is taken from the series that NAV is actually built on.  The
-    reconciliation below is checked here rather than trusted.
-    """
     for f in (STMT,):
         if not f.is_file():
             raise SystemExit(f"[ABORT] missing {f}; run stage 4 first")
     if not POS.is_dir():
         raise SystemExit(f"[ABORT] missing {POS}; run stage 3 first")
 
-    # `session` SEPARATES TWO ZEROS THAT ARE NOT THE SAME FACT.  A shut market
-    # and a market that traded and went nowhere both book 0.00, and the page
-    # cannot tell them apart without being told: 40% of the zero rows in 2026
-    # are holidays where the book held its position and there was simply no
-    # session.  Taken from the instrument's OWN book dates -- the union grid
-    # carries a row for it either way, which is exactly the trap.
     tb = _load(BOOK_PY, "tb_pnl")
     per: dict[str, list[dict]] = {}
     for f in sorted(POS.glob("*.parquet")):
         bars = set(tb.load_book(f.stem).get_column("date").to_list())
         q = pl.read_parquet(f).select(["date", "pnl_USD", "N_contracts"])
 
-        # `held` SEPARATES THE LAST TWO ZEROS.  A market the book was not in and
-        # a position that went nowhere both book 0.00, and three quarters of the
-        # zero rows in 2026 are the former -- the book declining a market, which
-        # is a decision, not an outcome.
-        #
-        # THE TEST IS THE TWO LEGS THAT ACTUALLY EARN, not the closing position:
-        # this session's P&L is N[t-2].(gap) + N[t-1].(day), so an instrument
-        # closed out at this morning's open still traded and still shows a
-        # figure.  Lagged over the instrument's OWN sessions, never the panel
-        # grid -- one row back on the grid can be a day this market was shut,
-        # which is the trap `session` above exists to describe.
         own = [(d, n) for d, n in zip(q.get_column("date").to_list(),
                                       q.get_column("N_contracts").to_list())
                if d in bars]
@@ -1184,8 +844,6 @@ def build_pnl() -> tuple[list[dict], dict]:
         rows = sorted(per.get(d, []),
                       key=lambda x: (-x["gross_pnl_USD"], x["instrument"]))
         tot = sum(x["gross_pnl_USD"] for x in rows)
-        # A cent of rounding per instrument over 63 instruments; anything larger
-        # means the attribution and the book have genuinely diverged.
         if abs(tot - r["gross_pnl_USD"]) > 1.0:
             raise SystemExit(
                 f"[ABORT] {d}: instruments sum to {tot:,.2f} but the statement "
@@ -1232,11 +890,6 @@ def main() -> int:
     print(f"  Q&A  corr vs {qa['bench']} {qa['corr']:+.3f} on {qa['n']} sessions"
           f"   {len(qa['positions'])} positions   "
           f"{qa['exposure']['leverage']:.2f}x gross")
-    # BUILT BEFORE THE --check RETURN, both of them.  `build_qa` used to run
-    # after it, so `--check` -- the flag the verifier calls and the one a person
-    # reaches for before publishing -- exercised four payloads out of six and
-    # reported success. A whitelist that is only enforced on the write path is
-    # not enforced on the path people use to ask whether the write would work.
     ex = build_expectations()
     d = next(r for r in ex["moments"] if r["horizon"] == "daily")
     print(f"  expectations  backtest {ex['backtest_start']}..."
@@ -1244,9 +897,6 @@ def main() -> int:
           f"skew {d['skew']:+.2f} vs live {ex['live_moments'][0]['skew']:+.2f}"
           f"   KS {ex['ks_d']:.4f} vs {ex['ks_crit']:.4f} crit"
           f" -> {'REJECT' if ex['ks_reject'] else 'cannot reject'}")
-    # EVERY payload through the window sweep, before --check returns and
-    # before a byte is written. Here rather than at each write() so that a
-    # new output cannot be added without passing through it.
     _window_sweep("latest.json", latest)
     _window_sweep("history.json", history)
     _window_sweep("index.json", index)
@@ -1271,12 +921,6 @@ def main() -> int:
     (OUT / "latest.json").write_text(latest_json, encoding="utf-8")
     (OUT / "history.json").write_text(json.dumps(history, separators=(",", ":")),
                                       encoding="utf-8")
-    # `sessions` IS NOT len(days).  The journal lists sessions that had an
-    # ORDER; the run contains sessions that had none -- a holiday where most of
-    # the book was shut still carries P&L and interest on whatever did trade,
-    # and 2026-04-03 is exactly that.  Publishing both lets the journal state
-    # the relationship instead of printing a count that silently disagrees with
-    # the overview.
     (OUT / "index.json").write_text(
         json.dumps({"days": index, "sessions": int(m["sessions"])},
                    separators=(",", ":")),
@@ -1296,9 +940,6 @@ def main() -> int:
     for d, payload in pnl_days.items():
         (OUT / "pnl" / f"{d}.json").write_text(
             json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    # STAMP AFTER THE DATA IS ON DISK, not before: the version covers the data,
-    # so a stamp written against JSON that then failed to write would point
-    # readers at a build that does not exist.
     stamp = build_stamp(latest)
     touched = stamp_pages(stamp)
     print(f"  cache version {stamp}   "

@@ -84,3 +84,6 @@ Thumbs.db
 # Stage 6 reads this for the site's "Updated" line; it is a local run
 # artifact and reaches the repo through docs/data/latest.json.
 Live/.pipeline_run.json
+
+# front_contract.py regenerates this, and it carries vendor prices.
+Live/1_Roll/Front_Contract/worksheet.csv
