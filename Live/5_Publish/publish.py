@@ -13,6 +13,10 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).resolve().parent
 LIVE = HERE.parent
 REPO = LIVE.parent

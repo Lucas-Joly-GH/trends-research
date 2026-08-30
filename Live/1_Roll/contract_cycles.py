@@ -15,6 +15,10 @@ if not _NODE.isascii():
 
 import polars as pl
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 CASH_SETTLED = {
     "BRN", "BTC", "ETH", "EMD", "ES", "FDAX9", "FESX9", "GF", "HE", "HSI",
     "LEU9", "LFT9", "NIY", "NQ", "RTY", "SJB", "SO3", "SR3", "SXF", "VX",

@@ -12,6 +12,10 @@ from pathlib import Path
 import numpy as np
 import polars as pl
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 HERE = Path(__file__).resolve().parent
 FC = HERE.parent / "1_Roll" / "Front_Contract" / "front_contract.py"
 CYCLES = HERE.parent / "1_Roll" / "contract_cycles.csv"

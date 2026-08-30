@@ -12,6 +12,10 @@ from datetime import datetime, timezone
 from html.parser import HTMLParser
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 _NODE = platform.node()
 if not _NODE.isascii():
     platform.node = lambda _n=_NODE.encode("ascii", "ignore").decode(): _n
