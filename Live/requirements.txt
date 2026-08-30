@@ -1,12 +1,5 @@
-# Minimum to run the Live pipeline.  Versions are the ones verified working on
-# this machine on 2026-08-28; both venvs below satisfy them.
-#
-#   LJOLY_Memoire_INSEEC_Msc2/.venv   python 3.12.10, polars 1.44.0, numpy 2.4.3
-#   trends-research/.venv             python 3.11.0,  polars 1.44.1, numpy 2.4.6
-#
 # Interoperable: the parquet worksheet cache written by one reads identically
 # in the other (verified, 95,533 x 25 both ways).
-#
 # pyarrow is NOT needed -- polars reads and writes parquet natively.
 # pandas is NOT used by any of our code; norgatedata declares it, so pip will
 # install it regardless.  Do not import it.  See Live/README.md.
