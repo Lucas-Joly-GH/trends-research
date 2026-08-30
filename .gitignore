@@ -90,3 +90,9 @@ Live/1_Roll/Front_Contract/worksheet.csv
 
 # Scheduled-run logs and status markers. Local only.
 Live/logs/
+
+# Local convenience launcher and its build artefacts.
+Live/Run pipeline.exe
+build/
+dist/
+*.spec
