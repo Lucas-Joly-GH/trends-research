@@ -51,8 +51,8 @@ SR3,20260828,HMUZ,"",HMUZ,4,false,false,0.0206,0.3281,+1_auto_roll,true
 SXF,20260828,HMUZ,"",HMUZ,4,false,false,0.9988,0.9994,forced_roll,
 UB,20260828,HMUZ,"",HMUZ,4,true,true,1.0,1.0,auto_roll,
 VX,20260828,FGHJKMNQUVXZ,"",FGHJKMNQUVXZ,12,false,false,0.8796,0.8726,CS_forced_roll,true
-YAP4,20260828,FGHJKMNQUVXZ,FGJKNQVX,HMUZ,12,false,false,0.9837,0.9927,forced_roll,
-YXT4,20260828,HMUZ,"",HMUZ,4,false,false,0.9961,0.9962,forced_roll,
+YAP4,20260831,FGHJKMNQUVXZ,FGJKNQVX,HMUZ,12,false,false,0.9837,0.9927,forced_roll,
+YXT4,20260831,HMUZ,"",HMUZ,4,false,false,0.9961,0.9962,forced_roll,
 ZB,20260828,HMUZ,"",HMUZ,4,true,true,0.9899,0.9695,auto_roll,
 ZC,20260828,HKNUZ,FX,HKNUZ,5,true,true,0.7715,0.9611,forced_roll,
 ZF,20260828,HMUZ,"",HMUZ,4,true,true,0.9997,0.9985,auto_roll,
