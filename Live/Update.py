@@ -1518,14 +1518,38 @@ def deploy() -> int:
         changed = [l for l in git("diff", "-U0", "--", "docs").splitlines()
                    if (l.startswith("+") or l.startswith("-"))
                    and not l.startswith(("+++", "---"))]
-        volatile = ("updated_at", "generated_at", "?v=")
+        volatile = ("updated_at", "generated_at", "?v=", "checked_at")
         material = [l for l in changed if not any(k in l for k in volatile)]
         if changed and not material:
-            git("checkout", "--", "docs")
+            # run.json porte l'heure de verification : c'est le SEUL fichier
+            # qui doit avancer un jour sans nouvelle seance. Tout le reste
+            # revient en arriere comme avant, pour ne pas commiter une
+            # pendule dans le payload.
+            RUN = "docs/data/run.json"
+            others = [f for f in git("status", "--porcelain", "--", "docs")
+                      .splitlines() if f[3:].strip() != RUN]
+            if others:
+                git("checkout", "--", "docs", ":!" + RUN)
             print(f"  docs/ differs only in timestamps and the asset stamp "
                   f"({len(changed)} lines) --")
-            print("  the published numbers are unchanged, so nothing is "
-                  "committed. Working tree reverted.")
+            print("  the published numbers are unchanged, so the payload is "
+                  "reverted.")
+            if git("status", "--porcelain", "--", RUN):
+                when = "unknown"
+                try:
+                    when = json.loads((HERE.parent / "docs" / "data"
+                                       / "run.json").read_text(
+                        encoding="utf-8"))["checked_at"]
+                except Exception:
+                    pass
+                git("add", "--", RUN)
+                git("commit", "-m", f"Checked {when}")
+                git("push", "origin", "HEAD:main")
+                print(f"  run.json alone is committed and pushed "
+                      f'("Checked {when}") -- the site can say it was')
+                print("  checked today even though the numbers did not move.")
+            else:
+                print("  nothing committed.")
             return 0
 
         git("add", "--", "docs")
@@ -2625,14 +2649,22 @@ def main() -> int:
     def _stamp(n_failures: int) -> None:
         if args.dry_run:
             return
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        full = not (args.no_portfolio or args.no_bookkeeping
+                    or args.no_reconcile)
         RUN_STAMP.write_text(json.dumps({
-            "completed_at": datetime.now(timezone.utc).isoformat(
-                timespec="seconds"),
+            "completed_at": now,
             "failures": int(n_failures),
             "verified": not args.no_verify,
-            "full_run": not (args.no_portfolio or args.no_bookkeeping
-                             or args.no_reconcile),
+            "full_run": full,
         }, indent=1), encoding="utf-8")
+        # Le site affiche « verifie le ... ». N'y ecrire que des executions
+        # completes, verifiees et sans echec : annoncer une verification qui
+        # a echoue serait pire que de ne rien annoncer du tout.
+        if full and not args.no_verify and not n_failures:
+            pub = HERE.parent / "docs" / "data" / "run.json"
+            pub.write_text(json.dumps({"checked_at": now}, indent=1),
+                           encoding="utf-8")
 
     _stamp(failures)
 

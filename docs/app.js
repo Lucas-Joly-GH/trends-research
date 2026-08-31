@@ -334,12 +334,25 @@ addEventListener("resize", () => {
 // pages out of five, which meant three pages gave a reader no way to tell how
 // old what they were reading was. `bust` pins the URL to the build, so a page
 // that already fetched latest.json takes this from cache.
-fetch(bust("data/latest.json")).then(r => r.json()).then(d => {
+// DEUX FAITS DISTINCTS. `Updated` dit quand les CHIFFRES ont bouge pour la
+// derniere fois ; `checked` dit quand le pipeline a tourne pour la derniere
+// fois, meme sans donnee nouvelle. Sans le second, un lundi sans seance fait
+// passer un site verifie le matin meme pour un site abandonne depuis
+// vendredi. run.json vit a part parce qu'il est le seul fichier autorise a
+// avancer quand le payload, lui, ne bouge pas.
+const fmtStamp = t => t.replace("T", " ").replace("+00:00", " UTC");
+Promise.all([
+  fetch(bust("data/latest.json")).then(r => r.json()).catch(() => null),
+  fetch(bust("data/run.json")).then(r => r.json()).catch(() => null),
+]).then(([d, run]) => {
   const n = el("stamp");
-  if (n && d.meta && d.meta.updated_at) {
-    n.textContent = "Updated "
-      + d.meta.updated_at.replace("T", " ").replace("+00:00", " UTC");
-  }
+  if (!n) return;
+  const bits = [];
+  if (d && d.meta && d.meta.updated_at)
+    bits.push("Updated " + fmtStamp(d.meta.updated_at));
+  if (run && run.checked_at)
+    bits.push("checked " + fmtStamp(run.checked_at));
+  if (bits.length) n.textContent = bits.join("  ·  ");
 }).catch(() => {});
 
 // ---------------------------------------------------------------
