@@ -341,3 +341,146 @@ fetch(bust("data/latest.json")).then(r => r.json()).then(d => {
       + d.meta.updated_at.replace("T", " ").replace("+00:00", " UTC");
   }
 }).catch(() => {});
+
+// ---------------------------------------------------------------
+// Rendu multi-series. `lineChart` ci-dessus trace UNE serie avec un
+// reticule ; celui-ci en trace jusqu'a dix sans reticule. Il vivait
+// dans qa.html tant qu'une seule page s'en servait ; la page
+// Expectations en a besoin aussi, d'ou la promotion ici plutot qu'une
+// copie.
+// Ten classes need ten distinguishable strokes, and the site's palette has two.
+// Picked for separation in BOTH schemes and checked against deuteranopia: no
+// two adjacent hues in the legend order collide under simulation.
+const PALETTE = ["#c1121f","#0a6b45","#14213d","#b5651d","#5a4fcf",
+                 "#0f7d8f","#8a1c6d","#7a7f14","#3f6bb5","#8c6f4a"];
+
+// A small multi-series renderer. `lineChart` in app.js draws one series with a
+// crosshair; this draws ten without one, and keeping it here means the shared
+// file does not grow a second charting mode used by a single page.
+function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData, logY) {
+  // `capId`/`capFn` let a second chart reuse this: the caption element and
+  // the text it shows on hover were hard-coded to the attribution chart.
+  const F = fmtV || (v => (v >= 0 ? "+" : "−") + "$" + Math.abs(v).toLocaleString(undefined, {maximumFractionDigits: 0}));
+  const svg = el(id);
+  const W = Math.round(svg.parentNode.getBoundingClientRect().width) || 900;
+  const H = Math.round(Math.min(420, Math.max(240, W * 0.34)));
+  const PL = 74, PR = 10, PT = 12, PB = 22;
+  // ZERO IS A MEANINGFUL FLOOR FOR CUMULATIVE P&L AND NOT FOR A NAV LEVEL.
+  // Anchoring at zero is right for the attribution chart, where a line at zero
+  // means "made nothing"; on four equity curves that all start at $100m it
+  // squeezed every one of them into the top eighth of the panel.
+  let lo = fitData ? Infinity : 0, hi = fitData ? -Infinity : 0;
+  for (const s of series) for (const v of s.vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+  if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
+  // ECHELLE LOG OPTIONNELLE. Sur huit mois une echelle lineaire va tres bien ;
+  // sur vingt-huit ans elle ecrase les deux premieres decennies contre l'axe
+  // et ne laisse voir que la fin. En log, une meme distance verticale est un
+  // meme pourcentage, ce qui est la seule facon de comparer des courbes qui
+  // se multiplient par quarante. Refusee si une valeur est <= 0, ou le
+  // logarithme n'existe pas.
+  const canLog = logY && lo > 0;
+  const L = v => Math.log10(v);
+  const pad = (hi - lo) * 0.06 || 1;
+  const y0 = canLog ? L(lo) - (L(hi) - L(lo)) * 0.04 : lo - pad;
+  const y1 = canLog ? L(hi) + (L(hi) - L(lo)) * 0.04 : hi + pad;
+  const x = i => PL + i * (W - PL - PR) / Math.max(dates.length - 1, 1);
+  const y = v => PT + (y1 - (canLog ? L(Math.max(v, Number.MIN_VALUE)) : v))
+                      * (H - PT - PB) / (y1 - y0);
+  let g = "";
+  // En log on pose les reperes sur les puissances de dix et leurs moities,
+  // pas a intervalle regulier : des graduations equidistantes en log
+  // donneraient des etiquettes comme 137.4m que personne ne lit.
+  const ticks = [];
+  if (canLog) {
+    for (let e = Math.floor(y0); e <= Math.ceil(y1); e++) {
+      for (const mant of [1, 2, 5]) {
+        const v = mant * Math.pow(10, e);
+        if (L(v) >= y0 && L(v) <= y1) ticks.push(v);
+      }
+    }
+  } else {
+    for (let t = 0; t <= 4; t++) ticks.push(y0 + (y1 - y0) * t / 4);
+  }
+  // La decimale depend de l'ETENDUE, pas de la valeur : sur 91m-118m elle
+  // porte l'information, sur 100m-4182m elle n'est que du bruit.
+  const dec = (hi - lo) < 5e7 ? 1 : 0;
+  for (const v of ticks) {
+    const yy = y(v);
+    g += `<line class="grid" x1="${PL}" y1="${yy}" x2="${W - PR}" y2="${yy}"/>`
+       + `<text class="lab" x="${PL - 6}" y="${yy + 3}" text-anchor="end">`
+       + `${(v / 1e6).toFixed(dec)}m</text>`;
+  }
+  if (!canLog && 0 >= y0 && 0 <= y1) {
+    g += `<line class="grid" x1="${PL}" y1="${y(0)}" x2="${W - PR}" y2="${y(0)}"/>`;
+  }
+  // Le repere suit la DUREE COUVERTE, pas le nombre de points: un an de
+  // seances se lit par mois, vingt-huit ans de fins de mois se liraient
+  // comme un trait noir de trois cent trente-six etiquettes superposees.
+  // Au-dela de quatorze ans on n'en garde qu'une sur deux.
+  const yrs = new Set(dates.map(d => d.slice(0, 4))).size;
+  const byYear = yrs > 2, step = yrs > 14 ? 2 : 1;
+  let seen = "", nth = 0;
+  dates.forEach((d, i) => {
+    const k = byYear ? d.slice(0, 4) : d.slice(0, 7);
+    if (k === seen) return;
+    seen = k;
+    if (byYear && (nth++ % step)) return;
+    g += `<text class="lab" x="${x(i)}" y="${H - 6}" text-anchor="middle">`
+       + `${byYear ? d.slice(0, 4) : d.slice(5, 7)}</text>`;
+  });
+  series.forEach((s, k) => {
+    const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    g += `<polyline fill="none" stroke="${PALETTE[k % PALETTE.length]}" `
+       + `stroke-width="1.6" points="${pts}"/>`;
+  });
+  g += `<g class="hv"></g>`;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.setAttribute("preserveAspectRatio", "none");
+  svg.style.height = H + "px";
+  svg.innerHTML = g;
+
+  // THE LEGEND IS THE READOUT.  Ten series cannot each carry a floating label
+  // without covering the chart, so hovering rewrites the legend in place to the
+  // values at that date and the caption to the date itself. Same idea as the
+  // NAV crosshair, one line of text instead of ten.
+  const legend = i => el(keyId).innerHTML = series.map((s, k) =>
+    `<span><i style="background:${PALETTE[k % PALETTE.length]}"></i>`
+    + `${s.name} ${F(s.vals[i])}</span>`).join("");
+  const LAST = dates.length - 1;
+  legend(LAST);
+
+  svg._m = {dates, series, W, H, PL, PR, PT, PB, x, y};
+  if (!svg._mBound) {
+    svg._mBound = true;
+    const reset = () => {
+      const st = svg._m; if (!st) return;
+      const layer = svg.querySelector(".hv"); if (layer) layer.innerHTML = "";
+      svg._legend(st.dates.length - 1);
+      if (capId) el(capId).textContent = svg._cap;
+    };
+    svg.addEventListener("pointerleave", reset);
+    svg.addEventListener("pointermove", ev => {
+      const st = svg._m, layer = svg.querySelector(".hv");
+      if (!st || !layer) return;
+      const r = svg.getBoundingClientRect(); if (!r.width) return;
+      const sx = (ev.clientX - r.left) * (st.W / r.width);
+      const span = (st.W - st.PL - st.PR) / Math.max(st.dates.length - 1, 1);
+      let i = Math.round((sx - st.PL) / span);
+      i = Math.max(0, Math.min(st.dates.length - 1, i));
+      const px = st.x(i);
+      layer.innerHTML =
+        `<line class="hv-line" x1="${px}" y1="${st.PT}" x2="${px}" `
+        + `y2="${st.H - st.PB}"/>`
+        + st.series.map((s, k) =>
+            `<circle cx="${px}" cy="${st.y(s.vals[i]).toFixed(1)}" r="2.5" `
+            + `fill="${PALETTE[k % PALETTE.length]}"/>`).join("")
+        + `<text class="hv-text" x="${px > st.PL + (st.W - st.PL - st.PR) / 2
+             ? px - 8 : px + 8}" y="${st.PT + 11}" text-anchor="${
+             px > st.PL + (st.W - st.PL - st.PR) / 2 ? "end" : "start"}">`
+        + `${st.dates[i]}</text>`;
+      svg._legend(i);
+      if (capId && capFn) el(capId).textContent = capFn(i, st);
+    });
+  }
+  svg._legend = legend;
+}

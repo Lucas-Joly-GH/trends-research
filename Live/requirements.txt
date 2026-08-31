@@ -7,3 +7,7 @@ polars>=1.44
 numpy>=2.4
 norgatedata>=1.0.77     # stage 1 only; needs the NDU app running locally
 scipy>=1.17             # not used by the pipeline yet; kept for the engine
+esprima>=4.0.1          # JS syntax check in Update.py's verify step.  It tops
+                        # out at ES2017, so the pages must avoid ?. and ?? --
+                        # a script that does not parse renders the whole page
+                        # blank while every other check still passes green.

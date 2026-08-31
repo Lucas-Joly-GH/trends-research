@@ -72,8 +72,12 @@ QA_POS_COLS = ["instrument", "asset_class", "contracts", "notional_USD",
 QA_WORST_COLS = ["date", "bench_ret", "book_ret"]
 QA_VOL_COLS = ["date", "realised"]
 BH_BUFFER = 0.10
-QA_BENCH_COLS = ["date", "book", "bh", "spx"]
+QA_BENCH_COLS = ["date", "book", "bh", "spx", "mix"]
 QA_BSTAT_COLS = ["key", "name", "total", "vol", "sharpe", "max_dd"]
+# Meme chose, plus le levier applique : c'est lui qui dit ce que la
+# normalisation a reellement demande a chaque serie.
+QA_VNSTAT_COLS = QA_BSTAT_COLS + ["k"]
+VN_TARGET = 0.10
 EXPECT_MOM_COLS = ["horizon", "n", "mean", "median", "sd", "skew", "kurt",
                    "up", "min", "max"]
 EXPECT_VAR_COLS = ["level", "normal", "cf", "hist", "normal_cvar", "hist_cvar",
@@ -84,6 +88,11 @@ EXPECT_ANNUAL_COLS = ["year", "ret"]
 EXPECT_CURVE_COLS = ["level", "normal", "cf", "hist", "normal_cvar",
                      "hist_cvar"]
 EXPECT_LIVE_COLS = ["date", "ret"]
+HIST_BENCH_COLS = ["month", "book", "bh", "spx", "mix"]
+HIST_BSTAT_COLS = ["key", "name", "total", "vol", "sharpe", "max_dd"]
+HIST_VNSTAT_COLS = HIST_BSTAT_COLS + ["k"]
+# Premiere annee pleine ou les quatre series existent ensemble.
+HIST_START = "1998-01-02"
 QA_KEYS = ["as_of", "bench", "bench_name", "n", "corr", "corr_lo", "corr_hi",
            "beta", "r2", "worst", "attribution", "attribution_cum",
            "positions", "exposure", "gross_notional_USD", "leverage",
@@ -407,7 +416,15 @@ def build_mapping() -> list[dict]:
     return rows
 
 
-def _bh_book() -> tuple[dict, dict]:
+def _bh_book(since: str = WINDOW_START,
+             frames: dict | None = None) -> tuple[dict, dict]:
+    """Buy & hold au dimensionnement du book.
+
+    `frames` : sorties par instrument d'une simulation deja faite. Les
+    parquets de positions sur disque ne portent N_raw et sized QUE sur
+    la fenetre live — avant 2026 ils sont nuls — donc l'historique doit
+    venir de la simulation, pas du disque.
+    """
     import csv as _csv
     spec = {r["norgate_code"]: r for r in
             _csv.DictReader((LIVE / "instrument_mapping.csv").open(encoding="utf-8"))}
@@ -420,8 +437,9 @@ def _bh_book() -> tuple[dict, dict]:
         bk = pl.read_parquet(tb.BOOK / f"{sym}.parquet",
                              columns=["date", "Continuous_O", "Continuous_C",
                                       "FX_rate", "hold"])
-        po = pl.read_parquet(POS / f"{sym}.parquet",
-                             columns=["date", "N_raw", "SIGNAL", "sized"])
+        C4 = ["date", "N_raw", "SIGNAL", "sized", "NAV"]
+        po = (frames[sym].select(C4) if frames is not None and sym in frames
+              else pl.read_parquet(POS / f"{sym}.parquet", columns=C4))
         d = (po.join(bk, on="date", how="left").sort("date")
                .with_columns(pl.col("hold").forward_fill().alias("h")))
         dts = d.get_column("date").to_list()
@@ -469,18 +487,133 @@ def _bh_book() -> tuple[dict, dict]:
         roll = np.zeros(n, bool)
         roll[1:] = (H[1:] != H[:-1]) & (H[1:] != None) & (H[:-1] != None)
         units = np.where(roll, np.abs(N1) + np.abs(N), np.abs(N - N1))
+        NAVs = np.asarray(d.get_column("NAV").to_numpy(), dtype=float)
+        NAVs = np.where(np.isfinite(NAVs) & (NAVs > 0), NAVs, np.nan)
         c = np.nan_to_num(units * (rt / 2.0) * FX)
+        c = np.divide(c, NAVs, out=np.zeros_like(c), where=np.isfinite(NAVs))
+        # N_raw est dimensionne contre la NAV DU BOOK a chaque date. Rendre
+        # des dollars obligerait l'appelant a additionner un P&L calibre sur
+        # une NAV qui n'est pas la sienne : sur huit mois l'ecart est faible,
+        # sur vingt-huit ans l'equity passe negative. On rend donc une
+        # FRACTION de la NAV de dimensionnement, que l'appelant capitalise
+        # sur sa propre equity.
+        rowpnl = np.divide(rowpnl, NAVs, out=np.zeros_like(rowpnl),
+                           where=np.isfinite(NAVs))
+
         pend = 0.0
         for t in range(n):
             pend += c[t]
             if t + 1 < n and bar[t + 1]:
-                if dts[t + 1] >= WINDOW_START:
+                if dts[t + 1] >= since:
                     cost[dts[t + 1]] = cost.get(dts[t + 1], 0.0) + pend
                 pend = 0.0
         for t, dt in enumerate(dts):
-            if dt >= WINDOW_START:
+            if dt >= since:
                 pnl[dt] = pnl.get(dt, 0.0) + rowpnl[t]
     return pnl, cost
+
+
+# Verrou de calibration du moteur, reutilise ici : la premiere estimation de
+# la frontiere exige la meme profondeur d'historique qu'un instrument avant
+# d'etre trade. Ce n'est pas un parametre choisi pour ce benchmark.
+FRONTIER_LOCK = 1280
+
+
+def _leg_stats(dates, rf_in, bx_ex, eq_ex, base, _st) -> list[dict]:
+    """Les deux jambes seules, sur la fenetre publiee.
+
+    Elles ne sont pas tracees — six courbes sur un graphique n'aident
+    personne — mais sans leurs chiffres le lecteur ne peut pas juger si le
+    melange apporte quelque chose a l'une ou a l'autre.
+    """
+    out = []
+    for k_, nm, src in (("book_ex", "Book, no equity instruments", bx_ex),
+                        ("equity", "Equity basket, equal weight", eq_ex)):
+        lv, cur = [], base
+        for i in range(len(dates)):
+            if i:
+                cur *= (1.0 + src.get(dates[i], 0.0) + float(rf_in[i]))
+            lv.append(cur)
+        t_, v_, sh, dd_ = _st(lv)
+        out.append({"key": k_, "name": nm, "total": round(t_, 6),
+                    "vol": round(v_, 6), "sharpe": round(sh, 4),
+                    "max_dd": round(dd_, 6)})
+    _guard("qa mix legs", out, QA_BSTAT_COLS)
+    return out
+
+
+def _equity_symbols() -> list[str]:
+    """Les instruments de la classe actions, d'apres la table du moteur."""
+    import csv as _csv
+    rows = _csv.DictReader(
+        (LIVE / "instrument_mapping.csv").open(encoding="utf-8"))
+    return [r["norgate_code"] for r in rows
+            if r["asset_class"].strip().lower() == "equity"]
+
+
+def _mix_legs() -> tuple[dict, float, dict, dict]:
+    """Les deux jambes du melange, sans recouvrement, plus les poids.
+
+    Renvoie (poids book par date de rebalancement, poids courant,
+    excedent du book hors actions par date, excedent du panier actions).
+    """
+    eqs = set(_equity_symbols())
+    pf = _load(PORT_PY, "pf_mix")
+    tb = _load(BOOK_PY, "tb_mix")
+    allin = sorted(q.stem for q in tb.BOOK.glob("*.csv"))
+    keep = [i_ for i_ in allin if i_ not in eqs]
+    if len(keep) >= len(allin):
+        raise SystemExit("[ABORT] melange : aucun instrument actions retire")
+
+    # Le book est RE-SIMULE sur l'univers reduit : retirer le P&L actions
+    # d'un book calibre sur 63 instruments donnerait un objet incoherent,
+    # puisque l'IDM et les poids 1/N dependent de l'univers.
+    dts, P, sym = pf.panel(tb, keep)
+    _f, prt, _fl = pf.simulate(dts, P, sym, keep, tb, pf.NAV_0,
+                               pf.IDM_CORR_SPAN, pf.TAU, True, True, True,
+                               True, pf.BUFFER, BACKTEST_START)
+    prt = prt.filter(pl.col("started"))
+    bx = {d: float(v) for d, v in zip(prt.get_column("date").to_list(),
+                                      prt.get_column("net_ret").to_numpy())}
+
+    # Panier actions equipondere, non leve. Composition variable dans le
+    # temps : un indice entre au panier le jour ou il cote, comme un
+    # instrument entre dans l'univers du book.
+    tot: dict[str, float] = {}
+    cnt: dict[str, int] = {}
+    for s_ in sorted(eqs):
+        f_ = tb.BOOK / f"{s_}.parquet"
+        if not f_.exists():
+            continue
+        d_ = (pl.read_parquet(f_, columns=["date", "daily_ret"]).sort("date"))
+        for dt, r_ in zip(d_.get_column("date").to_list(),
+                          d_.get_column("daily_ret").to_numpy()):
+            if r_ is not None and np.isfinite(r_):
+                tot[dt] = tot.get(dt, 0.0) + float(r_)
+                cnt[dt] = cnt.get(dt, 0) + 1
+    ex = {d: tot[d] / cnt[d] for d in tot if cnt[d]}
+
+    com = sorted(set(bx) & set(ex))
+    if len(com) < FRONTIER_LOCK + 60:
+        raise SystemExit(f"[ABORT] melange : {len(com)} seances communes")
+    B = np.array([bx[d] for d in com])
+    E = np.array([ex[d] for d in com])
+
+    out, seen = {}, set()
+    for i_, d in enumerate(com):
+        if i_ < FRONTIER_LOCK or d[:7] in seen:
+            continue
+        seen.add(d[:7])
+        b, e = B[:i_], E[:i_]        # [0, i) : strictement anterieur a d
+        mb, me = b.mean(), e.mean()
+        vb, ve = b.var(ddof=0), e.var(ddof=0)
+        cv = float(np.cov(b, e, ddof=0)[0, 1])
+        den = mb * ve + me * vb - (mb + me) * cv
+        w = 0.5 if not den or not np.isfinite(den) else (mb * ve - me * cv) / den
+        out[d] = float(min(1.0, max(0.0, w)))
+    if not out:
+        raise SystemExit("[ABORT] melange : aucun poids calcule")
+    return out, out[max(out)], bx, ex
 
 
 def build_qa() -> dict:
@@ -493,14 +626,15 @@ def build_qa() -> dict:
     ret = port.get_column("net_ret").to_numpy()
     cls = {r["instrument"]: r["asset_class"] for r in build_mapping()}
 
+    # `daily_ret` est le rendement ajuste Panama du memoire : variation du
+    # cours ajuste rapportee au cours BRUT. Le rapport de deux cours ajustes,
+    # utilise ici auparavant, est la formule que le chapitre 1 ecarte.
     tbf = _load(BOOK_PY, "tb_qa").BOOK / "ES.parquet"
-    es = (pl.read_parquet(tbf, columns=["date", "Continuous_C"])
+    es = (pl.read_parquet(tbf, columns=["date", "daily_ret"])
             .sort("date").filter(pl.col("date") >= WINDOW_START))
-    ed, ec = es.get_column("date").to_list(), es.get_column("Continuous_C").to_numpy()
-    bench = {}
-    for i in range(1, len(ed)):
-        if np.isfinite(ec[i]) and np.isfinite(ec[i - 1]) and ec[i - 1]:
-            bench[ed[i]] = float(ec[i] / ec[i - 1] - 1.0)
+    ed, ec = es.get_column("date").to_list(), es.get_column("daily_ret").to_numpy()
+    bench = {ed[i]: float(ec[i]) for i in range(len(ed))
+             if ec[i] is not None and np.isfinite(ec[i])}
     pair = [(float(r), bench[d]) for r, d in zip(ret, dates) if d in bench]
     B = np.array([x[0] for x in pair]); E = np.array([x[1] for x in pair])
     n = len(B)
@@ -564,27 +698,59 @@ def build_qa() -> dict:
          "realised": round(float(ret[i - W:i].std(ddof=0) * math.sqrt(256)), 6)}
         for i in range(W, len(ret) + 1) if i < len(dates)], QA_VOL_COLS)
 
-    bh_pnl, bh_cost = _bh_book()
-    eq_bh, e, itr = [], float(eq[0]), 0.0
+    # _bh_book rend des fractions de la NAV de dimensionnement : on les
+    # capitalise sur l'equity du buy & hold, qui derive de celle du book.
+    bh_r, bh_c = _bh_book()
+    rf_pre = np.concatenate([[0.0], np.nan_to_num(
+        port.get_column("rf_accrual_next").to_numpy())[:-1]])
+    eq_bh, e = [], float(eq[0])
     for i, dd_ in enumerate(dates):
         if i:
-            e += bh_pnl.get(dd_, 0.0) - bh_cost.get(dd_, 0.0) + itr
-        itr = e * float(port.get_column("rf_accrual_next").to_numpy()[i] or 0.0)
+            e *= (1.0 + bh_r.get(dd_, 0.0) - bh_c.get(dd_, 0.0)
+                  + float(rf_pre[i]))
         eq_bh.append(e)
 
+    # Interet acquis A l'entree du jour i, donc issu du taux de la veille.
+    # Remonte avant les courbes : la poche actions le touche aussi.
+    rf_in = np.concatenate([[0.0], np.nan_to_num(
+        port.get_column("rf_accrual_next").to_numpy())[:-1]])
+
+    # Une position ES integralement collateralisee replique le total return
+    # du S&P : sans l'interet, cette ligne vaut le total return moins le taux
+    # sans risque entier, ce qui flatte le book d'autant.
+    # L'interet court TOUS les jours, y compris ceux ou l'ES n'a pas cote :
+    # une seance sans donnee de prix est une seance sans mouvement, pas une
+    # seance sans collateral. Sauter le jour entier faisait diverger cette
+    # courbe de sa version normalisee, ce qu'a rattrape le controle de Sharpe.
     spx, lvl = [], float(eq[0])
     for i, dd_ in enumerate(dates):
-        if i and dd_ in bench:
-            lvl *= (1.0 + bench[dd_])
+        if i:
+            lvl *= (1.0 + bench.get(dd_, 0.0) + float(rf_in[i]))
         spx.append(lvl)
+
+    # Mixed : w sur le book, 1-w sur les actions. Les deux jambes sont des
+    # excedents, donc l'interet se rajoute UNE seule fois, au portefeuille.
+    wmap, w_now, bx_ex, eq_ex = _mix_legs()
+    wkeys = sorted(wmap)
+    mix, lvl, w_path, mix_ex = [], float(eq[0]), [], [0.0] * len(dates)
+    for i, dd_ in enumerate(dates):
+        prev = [k for k in wkeys if k < dd_]        # jamais le jour meme
+        w = wmap[prev[-1]] if prev else w_now
+        w_path.append(w)
+        if i:
+            # Les deux jambes sont disjointes : book PRIVE d'actions d'un
+            # cote, panier actions de l'autre. Aucun instrument compte deux
+            # fois. L'interet ne court qu'une fois, au niveau du portefeuille.
+            mix_ex[i] = (w * bx_ex.get(dd_, 0.0)
+                         + (1.0 - w) * eq_ex.get(dd_, 0.0))
+            lvl *= (1.0 + mix_ex[i] + float(rf_in[i]))
+        mix.append(lvl)
 
     curves = _guard("qa bench", [
         {"date": d, "book": round(float(eq[i]), 2),
-         "bh": round(eq_bh[i], 2), "spx": round(spx[i], 2)}
+         "bh": round(eq_bh[i], 2), "spx": round(spx[i], 2),
+         "mix": round(mix[i], 2)}
         for i, d in enumerate(dates)], QA_BENCH_COLS)
-
-    rf_in = np.concatenate([[0.0], np.nan_to_num(
-        port.get_column("rf_accrual_next").to_numpy())[:-1]])
 
     def _st(series):
         a_ = np.asarray(series, dtype=float)
@@ -598,13 +764,67 @@ def build_qa() -> dict:
     bstats, raw_st = [], {}
     for k, nm, series in (("book", "The book", eq),
                           ("bh", "Buy & hold, same universe", eq_bh),
-                          ("spx", "S&P 500, via ES", spx)):
+                          ("spx", "S&P 500 total return", spx),
+                          ("mix", "Book ex-equity + Equities B&H", mix)):
         t_, v_, sh, dd_ = _st(series)
         raw_st[k] = (t_, v_, sh, dd_)
         bstats.append({"key": k, "name": nm, "total": round(t_, 6),
                        "vol": round(v_, 6), "sharpe": round(sh, 4),
                        "max_dd": round(dd_, 6)})
     _guard("qa bench stats", bstats, QA_BSTAT_COLS)
+
+    # --- la meme comparaison, ramenee a 10 % de volatilite --------------
+    # Excedents jour par jour. Le book et l'ES le sont deja (net_ret, et un
+    # prix a terme porte le taux en deduction) ; le buy & hold capitalise
+    # l'interet, donc on le retire pour revenir a l'excedent.
+    ex = {"book": [0.0] * len(dates), "bh": [0.0] * len(dates),
+          "spx": [0.0] * len(dates), "mix": [0.0] * len(dates)}
+    for i, dd_ in enumerate(dates):
+        if not i:
+            continue
+        e_spx = bench.get(dd_, 0.0)
+        ex["book"][i] = float(ret[i])
+        ex["bh"][i] = (eq_bh[i] / eq_bh[i - 1] - 1.0 - float(rf_in[i])
+                       if eq_bh[i - 1] else 0.0)
+        ex["spx"][i] = e_spx
+        ex["mix"][i] = mix_ex[i]
+
+    vn_curves, vn_k = {}, {}
+    for k_ in ("book", "bh", "spx", "mix"):
+        a_ = np.asarray(ex[k_][1:], dtype=float)
+        sd = float(a_.std(ddof=0) * math.sqrt(256))
+        kk = VN_TARGET / sd if sd else 1.0
+        vn_k[k_] = kk
+        lv, cur = [], float(eq[0])
+        for i in range(len(dates)):
+            if i:
+                cur *= (1.0 + kk * ex[k_][i] + float(rf_in[i]))
+            lv.append(cur)
+        vn_curves[k_] = lv
+
+    vn = _guard("qa bench vn", [
+        {"date": d, "book": round(vn_curves["book"][i], 2),
+         "bh": round(vn_curves["bh"][i], 2),
+         "spx": round(vn_curves["spx"][i], 2),
+         "mix": round(vn_curves["mix"][i], 2)}
+        for i, d in enumerate(dates)], QA_BENCH_COLS)
+
+    vn_stats = []
+    for k_, nm in (("book", "The book"), ("bh", "Buy & hold, same universe"),
+                   ("spx", "S&P 500 total return"),
+                   ("mix", "Book ex-equity + Equities B&H")):
+        t_, v_, sh, dd_ = _st(vn_curves[k_])
+        vn_stats.append({"key": k_, "name": nm, "total": round(t_, 6),
+                         "vol": round(v_, 6), "sharpe": round(sh, 4),
+                         "max_dd": round(dd_, 6), "k": round(vn_k[k_], 4)})
+    _guard("qa bench vn stats", vn_stats, QA_VNSTAT_COLS)
+
+    # Le Sharpe est invariant par changement d'echelle : s'il a bouge, le
+    # calcul est faux quelque part.
+    for a_, b_ in zip(bstats, vn_stats):
+        if abs(a_["sharpe"] - b_["sharpe"]) > 5e-3:
+            raise SystemExit(f"[ABORT] normalisation {a_['key']}: Sharpe "
+                             f"{a_['sharpe']} -> {b_['sharpe']}")
 
     kx = raw_st["bh"][1] / raw_st["book"][1] if raw_st["book"][1] else 1.0
     scaled = {"vol_ratio": round(kx, 3),
@@ -614,7 +834,15 @@ def build_qa() -> dict:
     return {
         "as_of": last,
         "bench": "ES", "bench_name": "S&P 500 futures",
+        "mix_w_book": round(float(w_path[-1]), 4),
+        "mix_n_equity": len(_equity_symbols()),
+        "mix_legs": _leg_stats(dates, rf_in, bx_ex, eq_ex, float(eq[0]), _st),
+        "mix_w_spx": round(1.0 - float(w_path[-1]), 4),
+        "mix_w_min": round(float(min(w_path)), 4),
+        "mix_w_max": round(float(max(w_path)), 4),
+        "mix_lock": FRONTIER_LOCK,
         "bench_curves": curves, "bench_stats": bstats, "bench_scaled": scaled,
+        "bench_vn": vn, "bench_vn_stats": vn_stats, "bench_vn_target": VN_TARGET,
         "vol": vol, "vol_window": W, "vol_target": 0.20,
         "vol_mean": round(float(np.mean([v["realised"] for v in vol])), 6),
         "n": n, "corr": round(r, 4),
@@ -632,6 +860,120 @@ def build_qa() -> dict:
     }
 
 
+def _hist_bench(bd, br, rfa, per_inst) -> dict:
+    """Les quatre series sur 1998-2025, courbe mensuelle et statistiques.
+
+    `bd`/`br`/`rfa` viennent de la simulation deja faite par l'appelant : on
+    ne resimule pas le book complet une seconde fois pour rien.
+    """
+    import math
+
+    ix = [i for i, d in enumerate(bd) if HIST_START <= d < WINDOW_START]
+    if len(ix) < 2000:
+        raise SystemExit(f"[ABORT] historique : {len(ix)} seances")
+    dts = [bd[i] for i in ix]
+    # Interet acquis A l'entree du jour, donc taux de la veille.
+    rf = [0.0] + [float(rfa[i - 1] or 0.0) for i in ix[1:]]
+
+    pfm = _load(PORT_PY, "pf_hist")
+    NAV0 = float(pfm.NAV_0)
+    tb = _load(BOOK_PY, "tb_hist")
+    esf = (pl.read_parquet(tb.BOOK / "ES.parquet",
+                           columns=["date", "daily_ret"]).sort("date"))
+    spx = {d: float(v) for d, v in zip(esf.get_column("date").to_list(),
+                                       esf.get_column("daily_ret").to_numpy())
+           if v is not None and np.isfinite(v)}
+
+    wmap, _w_now, bx_ex, eq_ex = _mix_legs()
+    wkeys = sorted(wmap)
+
+    bh_pnl, bh_cost = _bh_book(HIST_START, per_inst)
+    eq_bh, e_ = [], NAV0
+    for k, d in enumerate(dts):
+        if k:
+            e_ *= (1.0 + bh_pnl.get(d, 0.0) - bh_cost.get(d, 0.0) + rf[k])
+        eq_bh.append(e_)
+
+    ex = {"book": [0.0], "bh": [0.0], "spx": [0.0], "mix": [0.0]}
+    for k in range(1, len(dts)):
+        d = dts[k]
+        prev = [q for q in wkeys if q < d]
+        w = wmap[prev[-1]] if prev else 0.5
+        ex["book"].append(float(br[ix[k]]))
+        ex["bh"].append(eq_bh[k] / eq_bh[k - 1] - 1.0 - rf[k]
+                        if eq_bh[k - 1] else 0.0)
+        ex["spx"].append(spx.get(d, 0.0))
+        ex["mix"].append(w * bx_ex.get(d, 0.0) + (1.0 - w) * eq_ex.get(d, 0.0))
+
+    NAMES = (("book", "The book"), ("bh", "Buy & hold, same universe"),
+             ("spx", "S&P 500 total return"),
+             ("mix", "Book ex-equity + Equities B&H"))
+
+    def walk(a, kk=1.0):
+        lv, cur = [], NAV0
+        for k in range(len(dts)):
+            if k:
+                cur *= (1.0 + kk * a[k] + rf[k])
+            lv.append(cur)
+        return lv
+
+    def stat(a, kk=1.0):
+        r_ = np.array([kk * v for v in a[1:]], dtype=float)
+        v_ = float(r_.std(ddof=0) * math.sqrt(256))
+        nav = np.cumprod(1.0 + r_ + np.array(rf[1:]))
+        return {"total": round(float(nav[-1] - 1.0), 6),
+                "vol": round(v_, 6),
+                "sharpe": round(float(r_.mean() * 256 / v_) if v_ else 0.0, 4),
+                "max_dd": round(float((nav / np.maximum.accumulate(nav)
+                                       - 1.0).min()), 6)}
+
+    curves = {k: walk(ex[k]) for k, _ in NAMES}
+    kfac = {}
+    for k, _ in NAMES:
+        sd = float(np.array(ex[k][1:]).std(ddof=0) * math.sqrt(256))
+        kfac[k] = VN_TARGET / sd if sd else 1.0
+    vcurves = {k: walk(ex[k], kfac[k]) for k, _ in NAMES}
+
+    # Fin de mois : dernier jour de bourse observe dans chaque mois.
+    last = {}
+    for k, d in enumerate(dts):
+        last[d[:7]] = k
+    months = sorted(last)
+
+    def rows(cv):
+        return [{"month": m, **{k: round(cv[k][last[m]], 2) for k, _ in NAMES}}
+                for m in months]
+
+    hb = _guard("expect hist bench", rows(curves), HIST_BENCH_COLS)
+    hv = _guard("expect hist bench vn", rows(vcurves), HIST_BENCH_COLS)
+
+    # Le garde-fou de fenetre ne reconnait pas « 1998-03 » comme une date et
+    # ne verrait donc rien passer : on verifie nous-memes la granularite.
+    for r_ in hb + hv:
+        m = r_["month"]
+        if not re.fullmatch(r"\d{4}-\d{2}", m):
+            raise SystemExit(f"[ABORT] historique : cle non mensuelle {m!r}")
+        if not (HIST_START[:7] <= m <= "2025-12"):
+            raise SystemExit(f"[ABORT] historique : mois hors fenetre {m}")
+
+    st = _guard("expect hist stats",
+                [{"key": k, "name": n, **stat(ex[k])} for k, n in NAMES],
+                HIST_BSTAT_COLS)
+    vst = _guard("expect hist vn stats",
+                 [{"key": k, "name": n, **stat(ex[k], kfac[k]),
+                   "k": round(kfac[k], 4)} for k, n in NAMES],
+                 HIST_VNSTAT_COLS)
+    for a_, b_ in zip(st, vst):
+        if abs(a_["sharpe"] - b_["sharpe"]) > 5e-3:
+            raise SystemExit(f"[ABORT] historique {a_['key']}: Sharpe "
+                             f"{a_['sharpe']} -> {b_['sharpe']}")
+
+    return {"hist_bench": hb, "hist_bench_vn": hv, "hist_bench_stats": st,
+            "hist_bench_vn_stats": vst, "hist_bench_target": VN_TARGET,
+            "hist_bench_from": months[0], "hist_bench_to": months[-1],
+            "hist_bench_n": len(dts)}
+
+
 def build_expectations() -> dict:
     import math
     from statistics import NormalDist
@@ -641,9 +983,9 @@ def build_expectations() -> dict:
     tb = _load(BOOK_PY, "tb_expect")
     insts = sorted(p.stem for p in tb.BOOK.glob("*.csv"))
     dates, P, sym = pf.panel(tb, insts)
-    _f, port, _fl = pf.simulate(dates, P, sym, insts, tb, pf.NAV_0,
-                                pf.IDM_CORR_SPAN, pf.TAU, True, True, True,
-                                True, pf.BUFFER, BACKTEST_START)
+    per_inst, port, _fl = pf.simulate(dates, P, sym, insts, tb, pf.NAV_0,
+                                      pf.IDM_CORR_SPAN, pf.TAU, True, True,
+                                      True, True, pf.BUFFER, BACKTEST_START)
     port = port.filter(pl.col("started"))
     bd = port.get_column("date").to_list()
     br = port.get_column("net_ret").to_numpy()
@@ -809,6 +1151,9 @@ def build_expectations() -> dict:
         "dd_underwater": round(float((bdd < -0.0001).mean()), 4),
         "horizon_hist": horizon_hist, "annual": annual, "qq": qq,
         "curve": curve, "live_returns": live_rows, "dd_hist": dd_hist,
+        # Les quatre benchmarks sur le backtest, en mensuel (cf. _hist_bench).
+        **_hist_bench(bd, br, port.get_column("rf_accrual_next").to_numpy(),
+                      per_inst),
     }
 
 

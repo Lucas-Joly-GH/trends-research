@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Q&amp;A &mdash; 2026 run</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=ee38815a">
+<link rel="stylesheet" href="site.css?v=42a4fdba">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -157,6 +157,18 @@
   <table class="data num" id="benchtable"></table>
 </div>
 
+<h3 id="benchvnh">Ex-post vol normalized 10%</h3>
+
+<figure>
+  <svg id="benchvn" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="benchvncap"></figcaption>
+</figure>
+<div class="key" id="benchvnkey"></div>
+
+<div class="scroll" style="margin-top:14px">
+  <table class="data num" id="benchvntable"></table>
+</div>
+
 <h2 id="more">Additional questions?</h2>
 
 <p>I&rsquo;ve tried my very best to answer all the possible questions a reviewer
@@ -181,17 +193,12 @@ this page and I&rsquo;d be pleased to answer you.</p>
   </div>
 </footer>
 
-<script src="app.js?v=ee38815a"></script>
+<script src="app.js?v=42a4fdba"></script>
 <script>
 const NUM = v => v == null ? "—" : v.toLocaleString(L, {maximumFractionDigits: 0});
 const SIGN = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "%";
 const cls2 = v => v < 0 ? "neg" : v > 0 ? "pos" : "";
 
-// Ten classes need ten distinguishable strokes, and the site's palette has two.
-// Picked for separation in BOTH schemes and checked against deuteranopia: no
-// two adjacent hues in the legend order collide under simulation.
-const PALETTE = ["#c1121f","#0a6b45","#14213d","#b5651d","#5a4fcf",
-                 "#0f7d8f","#8a1c6d","#7a7f14","#3f6bb5","#8c6f4a"];
 
 function card(k, v, s, colour) {
   // one class attribute, not two: `class="v" class="neg"` is invalid and the
@@ -201,101 +208,6 @@ function card(k, v, s, colour) {
        + `<div class="s">${s || ""}</div></div>`;
 }
 
-// A small multi-series renderer. `lineChart` in app.js draws one series with a
-// crosshair; this draws ten without one, and keeping it here means the shared
-// file does not grow a second charting mode used by a single page.
-function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData) {
-  // `capId`/`capFn` let a second chart reuse this: the caption element and
-  // the text it shows on hover were hard-coded to the attribution chart.
-  const F = fmtV || (v => (v >= 0 ? "+" : "−") + "$" + NUM(Math.abs(v)));
-  const svg = el(id);
-  const W = Math.round(svg.parentNode.getBoundingClientRect().width) || 900;
-  const H = Math.round(Math.min(420, Math.max(240, W * 0.34)));
-  const PL = 74, PR = 10, PT = 12, PB = 22;
-  // ZERO IS A MEANINGFUL FLOOR FOR CUMULATIVE P&L AND NOT FOR A NAV LEVEL.
-  // Anchoring at zero is right for the attribution chart, where a line at zero
-  // means "made nothing"; on three equity curves that all start at $100m it
-  // squeezed every one of them into the top eighth of the panel.
-  let lo = fitData ? Infinity : 0, hi = fitData ? -Infinity : 0;
-  for (const s of series) for (const v of s.vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
-  if (!isFinite(lo) || !isFinite(hi)) { lo = 0; hi = 1; }
-  const pad = (hi - lo) * 0.06 || 1;
-  const y0 = lo - pad, y1 = hi + pad;
-  const x = i => PL + i * (W - PL - PR) / Math.max(dates.length - 1, 1);
-  const y = v => PT + (y1 - v) * (H - PT - PB) / (y1 - y0);
-  let g = "";
-  for (let t = 0; t <= 4; t++) {
-    const v = y0 + (y1 - y0) * t / 4, yy = y(v);
-    g += `<line class="grid" x1="${PL}" y1="${yy}" x2="${W - PR}" y2="${yy}"/>`
-       + `<text class="lab" x="${PL - 6}" y="${yy + 3}" text-anchor="end">`
-       + `${(v / 1e6).toFixed(1)}m</text>`;
-  }
-  if (0 >= y0 && 0 <= y1) {
-    g += `<line class="grid" x1="${PL}" y1="${y(0)}" x2="${W - PR}" y2="${y(0)}"/>`;
-  }
-  let seen = "";
-  dates.forEach((d, i) => {
-    const mo = d.slice(0, 7);
-    if (mo !== seen) { seen = mo;
-      g += `<text class="lab" x="${x(i)}" y="${H - 6}" text-anchor="middle">`
-         + `${d.slice(5, 7)}</text>`; }
-  });
-  series.forEach((s, k) => {
-    const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    g += `<polyline fill="none" stroke="${PALETTE[k % PALETTE.length]}" `
-       + `stroke-width="1.6" points="${pts}"/>`;
-  });
-  g += `<g class="hv"></g>`;
-  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-  svg.setAttribute("preserveAspectRatio", "none");
-  svg.style.height = H + "px";
-  svg.innerHTML = g;
-
-  // THE LEGEND IS THE READOUT.  Ten series cannot each carry a floating label
-  // without covering the chart, so hovering rewrites the legend in place to the
-  // values at that date and the caption to the date itself. Same idea as the
-  // NAV crosshair, one line of text instead of ten.
-  const legend = i => el(keyId).innerHTML = series.map((s, k) =>
-    `<span><i style="background:${PALETTE[k % PALETTE.length]}"></i>`
-    + `${s.name} ${F(s.vals[i])}</span>`).join("");
-  const LAST = dates.length - 1;
-  legend(LAST);
-
-  svg._m = {dates, series, W, H, PL, PR, PT, PB, x, y};
-  if (!svg._mBound) {
-    svg._mBound = true;
-    const reset = () => {
-      const st = svg._m; if (!st) return;
-      const layer = svg.querySelector(".hv"); if (layer) layer.innerHTML = "";
-      svg._legend(st.dates.length - 1);
-      if (capId) el(capId).textContent = svg._cap;
-    };
-    svg.addEventListener("pointerleave", reset);
-    svg.addEventListener("pointermove", ev => {
-      const st = svg._m, layer = svg.querySelector(".hv");
-      if (!st || !layer) return;
-      const r = svg.getBoundingClientRect(); if (!r.width) return;
-      const sx = (ev.clientX - r.left) * (st.W / r.width);
-      const span = (st.W - st.PL - st.PR) / Math.max(st.dates.length - 1, 1);
-      let i = Math.round((sx - st.PL) / span);
-      i = Math.max(0, Math.min(st.dates.length - 1, i));
-      const px = st.x(i);
-      layer.innerHTML =
-        `<line class="hv-line" x1="${px}" y1="${st.PT}" x2="${px}" `
-        + `y2="${st.H - st.PB}"/>`
-        + st.series.map((s, k) =>
-            `<circle cx="${px}" cy="${st.y(s.vals[i]).toFixed(1)}" r="2.5" `
-            + `fill="${PALETTE[k % PALETTE.length]}"/>`).join("")
-        + `<text class="hv-text" x="${px > st.PL + (st.W - st.PL - st.PR) / 2
-             ? px - 8 : px + 8}" y="${st.PT + 11}" text-anchor="${
-             px > st.PL + (st.W - st.PL - st.PR) / 2 ? "end" : "start"}">`
-        + `${st.dates[i]}</text>`;
-      svg._legend(i);
-      if (capId && capFn) el(capId).textContent = capFn(i, st);
-    });
-  }
-  svg._legend = legend;
-}
 
 let QA = null;
 
@@ -344,13 +256,17 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
 
   // ---- where did the money come from? ----------------------------------
   const classes = j.attribution.map(a => a.asset_class);
+  // `v == null` attrape null ET undefined, et rien d'autre : c'est
+  // exactement la semantique de `??`, en syntaxe que le controle de
+  // syntaxe sait lire (esprima plafonne a ES2017).
+  const nz = v => v == null ? 0 : v;
   const byDate = {};
   for (const r of j.attribution_cum) {
     (byDate[r.date] = byDate[r.date] || {})[r.asset_class] = r.cum_USD;
   }
   const dates = Object.keys(byDate).sort();
   const series = classes.map(c => ({
-    name: c, vals: dates.map(d => byDate[d][c] ?? 0)}));
+    name: c, vals: dates.map(d => nz(byDate[d][c]))}));
   multiLine("attrib", dates, series, "attribkey", "attribcap",
             (i, st) => `At ${st.dates[i]}.  Total $`
                      + `${NUM(st.series.reduce((a, s) => a + s.vals[i], 0))}.`);
@@ -392,6 +308,35 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
     `<thead><tr><th class="l"></th><th>Total return</th><th>Volatility</th>`
     + `<th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
     + j.bench_stats.map(r => `<tr><td class="l">${r.name}</td>`
+        + `<td class="${cls2(r.total)}">${(r.total * 100).toFixed(2)}%</td>`
+        + `<td>${(r.vol * 100).toFixed(2)}%</td>`
+        + `<td>${r.sharpe.toFixed(2)}</td>`
+        + `<td class="neg">${(r.max_dd * 100).toFixed(2)}%</td></tr>`).join("")
+    + "</tbody>";
+  // The two legs are disjoint by construction: the book leg is re-simulated
+  // with every equity instrument removed, so its IDM and 1/N weights are
+  // recomputed on the smaller universe rather than having equity P&L
+  // subtracted after the fact. The legs are not plotted -- six lines on one
+  // chart helps nobody -- but their standalone numbers belong here, because
+  // without them there is no way to tell whether mixing achieved anything.
+  // ---- the same four at equal risk -------------------------------------
+  // Levering every series to one volatility is the only way the four are
+  // comparable: the same return profile draws unrelated curves depending on
+  // the leverage applied to it. Scaling leaves the Sharpe untouched, so what
+  // this chart adds over the table above is the drawdowns, side by side and
+  // finally on the same footing.
+  const VN = j.bench_vn, vdates = VN.map(x => x.date);
+  multiLine("benchvn", vdates, j.bench_vn_stats.map(st => ({
+    name: st.name, vals: VN.map(x => x[st.key])})),
+    "benchvnkey", "benchvncap", (i, st) => `At ${st.dates[i]}.`, mUSD, true);
+  el("benchvn")._cap = `$100m in each at ${(j.bench_vn_target * 100).toFixed(0)}`
+    + `% volatility, ${vdates[0]} to ${vdates[vdates.length - 1]}.`;
+  el("benchvncap").textContent = el("benchvn")._cap;
+  el("benchvntable").innerHTML =
+    `<thead><tr><th class="l"></th><th>Leverage</th><th>Total return</th>`
+    + `<th>Volatility</th><th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    + j.bench_vn_stats.map(r => `<tr><td class="l">${r.name}</td>`
+        + `<td>${r.k.toFixed(2)}×</td>`
         + `<td class="${cls2(r.total)}">${(r.total * 100).toFixed(2)}%</td>`
         + `<td>${(r.vol * 100).toFixed(2)}%</td>`
         + `<td>${r.sharpe.toFixed(2)}</td>`
@@ -482,7 +427,7 @@ addEventListener("resize", () => {
   const dates = Object.keys(byDate).sort();
   multiLine("attrib", dates,
             QA.attribution.map(a => ({name: a.asset_class,
-                                      vals: dates.map(d => byDate[d][a.asset_class] ?? 0)})),
+                                      vals: dates.map(d => nz(byDate[d][a.asset_class]))})),
             "attribkey", "attribcap",
             (i, st) => `At ${st.dates[i]}.  Total $`
                      + `${NUM(st.series.reduce((a, s) => a + s.vals[i], 0))}.`);

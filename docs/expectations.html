@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Historical expectations &mdash; 2026 run</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=ee38815a">
+<link rel="stylesheet" href="site.css?v=42a4fdba">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -109,12 +109,36 @@ Historical sorts the realised returns.</p>
 <figure><div id="timeline"></div><p class="key" id="tlkey"></p></figure>
 <div class="scroll"><table class="data" id="breachtable"></table></div>
 
+<h2 id="benchmarks">How does it look against benchmarks?</h2>
+
+<figure>
+  <svg id="hbench" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="hbenchcap"></figcaption>
+</figure>
+<div class="key" id="hbenchkey"></div>
+
+<div class="scroll" style="margin-top:14px">
+  <table class="data num" id="hbenchtable"></table>
+</div>
+
+<h3 id="hbenchvnh">Ex-post vol normalized 10%</h3>
+
+<figure>
+  <svg id="hbenchvn" viewBox="0 0 100 40" preserveAspectRatio="none"></svg>
+  <figcaption id="hbenchvncap"></figcaption>
+</figure>
+<div class="key" id="hbenchvnkey"></div>
+
+<div class="scroll" style="margin-top:14px">
+  <table class="data num" id="hbenchvntable"></table>
+</div>
+
 <h2 id="drawdown">Drawdown</h2>
 <figure><figcaption>Backtest drawdown depth, share of sessions at each
   depth</figcaption><div id="ddhist"></div></figure>
 <div class="scroll"><table class="data" id="dd"></table></div>
 
-<script src="app.js?v=ee38815a"></script>
+<script src="app.js?v=42a4fdba"></script>
 <script>
 fetch(bust("data/expectations.json")).then(r => r.json()).then(j => {
 
@@ -528,6 +552,46 @@ el("dd").innerHTML =
   + P2(j.dd_live_worst) + " (" + P0(j.dd_percentile)
   + " percentile of the backtest)</td></tr></tbody>";
 
+
+  // ---- the four benchmarks over the backtest ---------------------------
+  // Monthly, not daily: the published run stops at 2025 and only the live
+  // window is published session by session. Month-end wealth is enough to
+  // read the shape, and the table is computed on the daily series, because a
+  // drawdown sampled at month ends understates the real one.
+  const HB = j.hist_bench, hbm = HB.map(x => x.month);
+  const hUSD = v => "$" + (v / 1e6).toFixed(0) + "m";
+  const hcap = (i, st) => `At ${st.dates[i]}.`;
+  multiLine("hbench", hbm, j.hist_bench_stats.map(st => ({
+    name: st.name, vals: HB.map(x => x[st.key])})),
+    "hbenchkey", "hbenchcap", hcap, hUSD, true, true);
+  el("hbench")._cap = `$100m in each, ${j.hist_bench_from} to `
+    + `${j.hist_bench_to}, month ends.`;
+  el("hbenchcap").textContent = el("hbench")._cap;
+
+  const HV = j.hist_bench_vn;
+  multiLine("hbenchvn", hbm, j.hist_bench_vn_stats.map(st => ({
+    name: st.name, vals: HV.map(x => x[st.key])})),
+    "hbenchvnkey", "hbenchvncap", hcap, hUSD, true, true);
+  el("hbenchvn")._cap = `$100m in each at `
+    + `${(j.hist_bench_target * 100).toFixed(0)}% volatility, `
+    + `${j.hist_bench_from} to ${j.hist_bench_to}.`;
+  el("hbenchvncap").textContent = el("hbenchvn")._cap;
+
+  const benchRow = (r, k) => `<tr><td class="l">${r.name}</td>`
+    + (k ? `<td>${r.k.toFixed(2)}\u00d7</td>` : "")
+    + `<td>${(r.total * 100).toFixed(1)}%</td>`
+    + `<td>${(r.vol * 100).toFixed(2)}%</td>`
+    + `<td>${r.sharpe.toFixed(2)}</td>`
+    + `<td>${(r.max_dd * 100).toFixed(1)}%</td></tr>`;
+  el("hbenchtable").innerHTML =
+    `<thead><tr><th class="l"></th><th>Total return</th><th>Volatility</th>`
+    + `<th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    + j.hist_bench_stats.map(r => benchRow(r, false)).join("") + "</tbody>";
+  el("hbenchvntable").innerHTML =
+    `<thead><tr><th class="l"></th><th>Leverage</th><th>Total return</th>`
+    + `<th>Volatility</th><th>Sharpe</th><th>Max drawdown</th></tr></thead>`
+    + `<tbody>`
+    + j.hist_bench_vn_stats.map(r => benchRow(r, true)).join("") + "</tbody>";
 }).catch(e => {
   el("sub").textContent = "Could not load data/expectations.json.";
 });

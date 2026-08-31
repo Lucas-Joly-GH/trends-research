@@ -1915,6 +1915,70 @@ def verify_vendor(started: float) -> int:
     return _report("vendor bars -- the panel as delivered", r)
 
 
+# Noeuds qui ouvrent une portee lexicale.
+_JS_SCOPES = {"Program", "BlockStatement", "ForStatement", "ForInStatement",
+              "ForOfStatement", "SwitchStatement", "CatchClause", "ClassBody",
+              "StaticBlock"}
+
+
+def _bound(pat, out: list) -> None:
+    """Identifiants qu'un motif de liaison declare."""
+    t = pat.get("type")
+    if t == "Identifier":
+        out.append(pat["name"])
+    elif t == "ObjectPattern":
+        for q in pat.get("properties") or []:
+            v = q.get("value") or q.get("argument")
+            if v:
+                _bound(v, out)
+    elif t == "ArrayPattern":
+        for e in pat.get("elements") or []:
+            if e:
+                _bound(e, out)
+    elif t == "AssignmentPattern":
+        _bound(pat["left"], out)
+    elif t == "RestElement":
+        _bound(pat["argument"], out)
+
+
+def _js_kids(node):
+    for v in (node.values() if isinstance(node, dict) else []):
+        if isinstance(v, dict) and "type" in v:
+            yield v
+        elif isinstance(v, list):
+            for x in v:
+                if isinstance(x, dict) and "type" in x:
+                    yield x
+
+
+def _redeclared(node, out: list | None = None) -> list:
+    """let/const/class declares deux fois dans la MEME portee.
+
+    Le navigateur refuse alors le script entier. Esprima ne le signale pas :
+    ce n'est pas une erreur de syntaxe mais une erreur precoce de portee.
+    """
+    out = [] if out is None else out
+    if not isinstance(node, dict) or "type" not in node:
+        return out
+    if node["type"] in _JS_SCOPES:
+        seen: set[str] = set()
+        for child in _js_kids(node):
+            names: list[str] = []
+            if (child.get("type") == "VariableDeclaration"
+                    and child.get("kind") in ("let", "const")):
+                for d in child.get("declarations") or []:
+                    _bound(d["id"], names)
+            elif child.get("type") == "ClassDeclaration" and child.get("id"):
+                names.append(child["id"]["name"])
+            for n in names:
+                if n in seen:
+                    out.append(n)
+                seen.add(n)
+    for child in _js_kids(node):
+        _redeclared(child, out)
+    return out
+
+
 def verify_assets(started: float) -> int:
     DOCS = HERE.parent / "docs"
     r: list[tuple[bool, str, str]] = []
@@ -2037,6 +2101,85 @@ def verify_assets(started: float) -> int:
             if call in shared or call in local or call in _JS_BUILTINS:
                 continue
             unknown.append(f"{f.name}: {call}()")
+    # --- le JavaScript se parse-t-il seulement ? ------------------------
+    # Une erreur de syntaxe rend la page entierement muette : le navigateur
+    # abandonne le bloc <script> en entier, y compris ce qui marchait avant.
+    # Tous les autres controles restent verts dans ce cas.
+    try:
+        import esprima
+    except ImportError:
+        r.append(_ok("JavaScript parses on every page", False,
+                     "esprima absent -- pip install -r requirements.txt"))
+    else:
+        broken = 0
+        n_blk = 0
+        detail = []
+        for f in pages + [DOCS / "app.js"]:
+            src = f.read_text(encoding="utf-8")
+            blocks = ([(0, src)] if f.suffix == ".js"
+                      else [(m.start(), m.group(1)) for m in
+                            re.finditer(r"<script>(.*?)</script>", src, re.S)])
+            for off, b in blocks:
+                if not b.strip():
+                    continue
+                n_blk += 1
+                ln = src[:off].count("\n") + 1
+                try:
+                    tree = esprima.parseScript(b).toDict()
+                except Exception as exc:      # noqa: BLE001 - message a afficher
+                    broken += 1
+                    detail.append(f"{f.name} (script at line {ln}): {exc}")
+                    continue
+                dup = sorted(set(_redeclared(tree)))
+                if dup:
+                    broken += 1
+                    detail.append(f"{f.name} (script at line {ln}): "
+                                  f"redeclared {dup[:3]}")
+        r.append(_ok("JavaScript parses, nothing redeclared", not broken,
+                     "; ".join(detail[:3]) if detail
+                     else f"{n_blk} script block(s), ES2017"))
+
+    # --- chaque graphique est-il reellement dessine ? -------------------
+    # Le controle precedent va de l'appel vers le balisage. Celui-ci va du
+    # balisage vers l'appel : un conteneur que plus personne ne dessine est
+    # une page qui s'affiche sans erreur et sans courbe.
+    SHAPES = ("polyline", "<rect", "<path", "<circle", "<line")
+    painters = set()
+    for f in [DOCS / "app.js"] + pages:
+        src = f.read_text(encoding="utf-8")
+        for m in re.finditer(r"^function\s+([A-Za-z_]\w*)\s*\(", src, re.M):
+            nxt = re.search(r"^function\s", src[m.end():], re.M)
+            body = src[m.end(): m.end() + (nxt.start() if nxt else len(src))]
+            if any(t in body for t in SHAPES):
+                painters.add(m.group(1))
+
+    FIGRE = re.compile(r"<figure\b.*?</figure>", re.S | re.I)
+    SVGRE = re.compile(r'<svg\b[^>]*\bid="([A-Za-z0-9_-]+)"')
+    DIVRE = re.compile(r'<div\b[^>]*\bid="([A-Za-z0-9_-]+)"\s*>\s*</div>')
+    appsrc = (DOCS / "app.js").read_text(encoding="utf-8")
+    blank, n_charts = [], 0
+    for f in pages:
+        src = f.read_text(encoding="utf-8")
+        # Un graphique est un <svg> nomme, ou un <div> vide dans une <figure>.
+        cont = set(SVGRE.findall(src))
+        for fig in FIGRE.findall(src):
+            cont |= set(DIVRE.findall(fig))
+        if not cont:
+            continue
+        scripts = src + "\n" + appsrc
+        drawn, prefix = set(), []
+        for fn in painters:
+            drawn |= set(re.findall(rf'\b{fn}\(\s*"([A-Za-z0-9_-]+)"', scripts))
+            # Cibles construites par concatenation : histBars("h_" + h, ...).
+            prefix += re.findall(rf'\b{fn}\(\s*"([A-Za-z0-9_-]+)"\s*\+', scripts)
+        n_charts += len(cont)
+        for c in sorted(cont):
+            if c not in drawn and not any(c.startswith(q) for q in prefix):
+                blank.append(f"{f.name}#{c}")
+    r.append(_ok("every chart is drawn into by a painter", not blank,
+                 "; ".join(blank[:4]) if blank
+                 else f"{n_charts} chart(s), {len(painters)} painter(s)"))
+
     r.append(_ok("every helper a page calls is defined", not unknown,
                  "; ".join(sorted(set(unknown))[:4]) if unknown
                  else f"checked against {len(shared)} shared names"))
