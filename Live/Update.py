@@ -1577,7 +1577,47 @@ def deploy() -> int:
                    and not l.startswith(("+++", "---"))]
         volatile = ("updated_at", "generated_at", "?v=", "checked_at")
         material = [l for l in changed if not any(k in l for k in volatile)]
-        if changed and not material:
+
+        # LE REVERT NE DOIT JAMAIS EMPORTER UNE EDITION A LA MAIN.
+        #
+        # Le test ligne a ligne ci-dessus suffit pour une MODIFICATION : elle
+        # produit une ligne '-' portant le texte d'origine, qui est materielle,
+        # donc on part commiter. Il ne suffit pas pour un AJOUT PUR dont toutes
+        # les lignes contiennent un mot volatil -- une remarque sur `checked_at`
+        # ajoutee dans app.js, par exemple. Il n'y a alors aucune ligne '-' pour
+        # la contredire, la modification passe pour de la pendule, et le revert
+        # l'efface sans un mot. C'est etroit, et ce sont precisement les mots
+        # qu'on emploie en commentant l'estampillage de ce depot.
+        #
+        # On cesse donc de juger les SOURCES sur le contenu de leurs lignes. Le
+        # pipeline n'ecrit dans les pages, app.js et site.css qu'une seule
+        # chose, `?v=`. Toute autre difference y est humaine, par construction.
+        # docs/data reste juge comme avant : il est regenere en entier a chaque
+        # execution et n'a pas d'auteur.
+        def hand_edited():
+            out = []
+            for line in git("status", "--porcelain", "--", "docs").splitlines():
+                f = line[3:].strip()
+                if not f or f.startswith("docs/data/"):
+                    continue
+                d = [l for l in git("diff", "-U0", "--", f).splitlines()
+                     if (l.startswith("+") or l.startswith("-"))
+                     and not l.startswith(("+++", "---"))]
+                # Un fichier non suivi n'a pas de diff : rien a annuler pour
+                # `git checkout`, mais il n'est pas de la pendule non plus.
+                if not d or any("?v=" not in l for l in d):
+                    out.append(f)
+            return out
+
+        hand = hand_edited()
+        if changed and not material and hand:
+            print(f"  {len(hand)} source file(s) carry hand edits that are not "
+                  f"the asset stamp:")
+            for f in hand[:4]:
+                print(f"    {f}")
+            print("  so docs/ is NOT reverted -- the edit is committed with the "
+                  "run instead.")
+        if changed and not material and not hand:
             # run.json porte l'heure de verification : c'est le SEUL fichier
             # qui doit avancer un jour sans nouvelle seance. Tout le reste
             # revient en arriere comme avant, pour ne pas commiter une
