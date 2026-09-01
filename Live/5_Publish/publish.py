@@ -105,6 +105,10 @@ QA_KEYS = ["as_of", "bench", "bench_name", "n", "corr", "corr_lo", "corr_hi",
            "book", "bh", "spx", "vol_ratio", "scaled_total", "scaled_dd"]
 
 FORBIDDEN = ["norgate"]
+# L'adresse publique, en dur : og:image et og:url doivent etre absolues
+# (un scraper ne resout pas les chemins relatifs) et rien dans le depot
+# ne la connait autrement.
+SITE = "https://lucas-joly-gh.github.io/trends-research/"
 META_KEYS = ["as_of", "window_start", "sessions", "equity_start", "equity_end",
              "net_ann_ret", "net_cagr", "cagr_trading", "window_ret_trading",
              "window_ret_interest", "net_ann_vol", "net_sharpe",
@@ -1368,6 +1372,26 @@ def main() -> int:
     for d, payload in pnl_days.items():
         (OUT / "pnl" / f"{d}.json").write_text(
             json.dumps(payload, separators=(",", ":")), encoding="utf-8")
+    # LA VIGNETTE NE PEUT PAS FAIRE ECHOUER LA PUBLICATION.  C'est une image
+    # de partage : si matplotlib manque ou qu'une police fait defaut, la carte
+    # de la veille reste en place et la seance part quand meme.  L'inverse --
+    # une seance non publiee a cause d'un ornement -- serait absurde.
+    try:
+        import social_card
+        social_card.render(
+            OUT.parent / "og.png",
+            [r["date"] for r in history["daily"]],
+            [r["equity_USD"] for r in history["daily"]],
+            {"ret": f"{m['net_ann_ret']:.2%}",
+             "sharpe": f"{m['net_sharpe']:.2f}",
+             "dd": f"{m['max_drawdown']:.2%}",
+             "sessions": f"{m['sessions']:,}"},
+            SITE)
+        print("  social card   og.png redrawn from this session's figures")
+    except Exception as exc:                       # noqa: BLE001
+        print(f"  [WARN] social card not redrawn ({exc.__class__.__name__}: "
+              f"{exc}); the previous og.png stands")
+
     stamp = build_stamp(latest)
     touched = stamp_pages(stamp)
     print(f"  cache version {stamp}   "

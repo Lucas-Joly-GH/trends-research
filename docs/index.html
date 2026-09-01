@@ -4,6 +4,30 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Systematic futures — 2026 run</title>
+
+<!-- CE QUI S'AFFICHE QUAND ON PARTAGE LE LIEN.  Sans ces balises un
+     scraper ne montre qu'un rectangle gris : c'est le seul moment ou la
+     page est jugee avant d'etre lue.  Les URL sont absolues parce qu'un
+     scraper ne resout pas les chemins relatifs.  La vignette est
+     redessinee a chaque publication, donc elle ne peut pas mentir. -->
+<meta name="description" content="A diversified trend-following futures book, paper-traded from $100m across 63 markets. Every order is published before the open it is sent to.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Systematic futures — 2026 run">
+<meta property="og:title" content="Systematic futures — 2026 paper-trading run">
+<meta property="og:description" content="A diversified trend-following futures book, paper-traded from $100m across 63 markets. Every order is published before the open it is sent to.">
+<meta property="og:url" content="https://lucas-joly-gh.github.io/trends-research/">
+<meta property="og:image" content="https://lucas-joly-gh.github.io/trends-research/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Net asset value of the 2026 paper-trading run, with its headline figures.">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Systematic futures — 2026 paper-trading run">
+<meta name="twitter:description" content="A diversified trend-following futures book, paper-traded from $100m across 63 markets. Every order is published before the open it is sent to.">
+<meta name="twitter:image" content="https://lucas-joly-gh.github.io/trends-research/og.png">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="alternate icon" href="favicon.png" sizes="32x32">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
 <link rel="stylesheet" href="site.css?v=55dfc9fe">
 <style>
@@ -52,7 +76,7 @@
      they pair, a stacked nine-column table spreads over ~1300px again.  The cap
      holds them at the density they have everywhere else; it never binds once
      paired, because a pane is narrower than this. */
-  #pending,#executed,#outstanding,#episodes{max-width:1150px}
+  #pending,#executed,#outstanding{max-width:1150px}
   .pair{display:block}
   @media (min-width:1440px){
     .pair{display:flex;gap:34px;align-items:flex-start}
@@ -69,10 +93,13 @@
      white-space:normal;vertical-align:bottom}
   th.l,td.l{text-align:left}
   .num{font-variant-numeric:tabular-nums}
-  /* The one row a reader is actually in today. `table()` emits no row
-     classes -- it is shared by five tables that do not want them -- so the
-     class is put on afterwards rather than by widening the helper. */
-  tr.hl td{background:var(--panel)}
+  /* A BUTTON THAT LOOKS LIKE THE PROSE AROUND IT.  The page has exactly one
+     other control, the theme toggle, and it is an underlined word; a second
+     control styled as a filled rectangle would be the loudest thing on a page
+     whose argument is that it is not selling anything. */
+  .dl{font:inherit;color:var(--ink);background:none;border:0;padding:0;
+      cursor:pointer;text-decoration:underline}
+  .dl:hover{color:var(--muted)}
   .scroll{overflow-x:auto}
   .stats td,.stats th{border:none;padding:2px 26px 2px 0;text-align:left}
   .stats{width:auto;margin-bottom:14px}
@@ -136,7 +163,9 @@
 
     <h2>Summary</h2>
     <table class="stats num" id="stats"></table>
-    
+
+    <p class="note"><button type="button" id="csv" class="dl">Download the
+       daily series (CSV)</button> <span id="csvnote"></span></p>
   </div>
 
   <div class="col-r">
@@ -152,11 +181,6 @@
       <figcaption id="dcap"></figcaption>
     </figure>
   </div>
-</div>
-
-<div id="epwrap" hidden>
-  <h2>Drawdown episodes</h2>
-  <div class="scroll"><table class="num" id="episodes"></table></div>
 </div>
 
 <div class="pair">
@@ -374,27 +398,36 @@ fetch(bust("data/history.json")).then(r=>r.json()).then(h=>{
   el("dcap").textContent =
     `Peak-to-trough on net asset value, after costs and interest. `
     + `Deepest ${pct(dd[k])} on ${d[k].date}; currently ${pct(dd[dd.length-1])}.`;
-  // THE EPISODES SIT OUTSIDE `.split`, not under the chart in the right
-  // column: `balance()` sizes the two columns against each other, and a table
-  // growing inside one of them is exactly what that measurement cannot see.
-  // Full width below the split reads as "under the drawdown chart" anyway,
-  // because the right column ends there.
-  const ep = h.episodes || [];
-  if (ep.length) {
-    el("epwrap").hidden = false;
-    table(el("episodes"), ep, [
-      {label: "Peak",          get: r => r.peak, l: true},
-      {label: "Trough",        get: r => r.trough, l: true},
-      {label: "Recovered",     get: r => r.recovered || "not yet", l: true},
-      {label: "Depth",         get: r => pct(r.depth)},
-      {label: "Sessions down", get: r => r.to_trough},
-      {label: "To recover",    get: r => r.to_recover == null ? "—"
-                                                              : r.to_recover},
-    ]);
-    ep.forEach((r, i) => {
-      if (r.ongoing) el("episodes").tBodies[0].rows[i].className = "hl";
-    });
-  }
+  // THE EXPORT IS BUILT ON CLICK, not at load: the page already holds the
+  // rows, and materialising a string nobody asked for on every visit is the
+  // kind of cost that is invisible until the series is ten years long.
+  //
+  // THE FIELDS ARE THE PUBLISHED ONES, in the published order, so a reader can
+  // line the file up against data/history.json field by field. The one rename
+  // is `commission_USD` -> `trading_cost_USD`: the number carries a full tick
+  // of spread each way as well as fees, and a column header is exactly where
+  // that gets misread as brokerage.
+  const CSVCOLS = [["date", "date"], ["equity_USD", "equity_USD"],
+                   ["drawdown", "drawdown"], ["gross_pnl_USD", "gross_pnl_USD"],
+                   ["trading_cost_USD", "commission_USD"],
+                   ["interest_USD", "interest_USD"]];
+  el("csvnote").textContent = d.length + " sessions to " + d[d.length-1].date
+                              + ".";
+  el("csv").addEventListener("click", () => {
+    const rows = [CSVCOLS.map(c => c[0]).join(",")];
+    for (const r of d) rows.push(CSVCOLS.map(c => r[c[1]]).join(","));
+    // CRLF and a BOM: this file is opened in Excel more often than in pandas,
+    // and without the BOM Excel reads UTF-8 as the local codepage.
+    const blob = new Blob([("\ufeff") + rows.join("\r\n") + "\r\n"],
+                          {type: "text/csv;charset=utf-8"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "trends-research-daily-" + d[d.length-1].date + ".csv";
+    a.click();
+    // Revoked on the next tick, not immediately: Safari has not started the
+    // download when `click()` returns.
+    setTimeout(() => URL.revokeObjectURL(a.href), 0);
+  });
 
   // AFTER the captions: they are two lines of the right column's height, and
   // balancing without them measured a column 40px shorter than it ends up.

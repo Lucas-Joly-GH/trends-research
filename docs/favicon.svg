@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Une ligne qui monte, et rien d'autre. A 16 px un glyphe n'a droit qu'a
+       une idee : tout ce qui ressemble a un logo devient une tache grise.
+       La couleur suit le theme de la barre d'onglets, pas celui du site. -->
+  <style>
+    path { stroke: #14213d; }
+    @media (prefers-color-scheme: dark) { path { stroke: #e6e6e6; } }
+  </style>
+  <path d="M3 25 L11 17 L15 20 L21 9 L26 5" fill="none" stroke-width="3.6"
+        stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
