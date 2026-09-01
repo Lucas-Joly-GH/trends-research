@@ -59,26 +59,38 @@ RULE = "#2a2a2a"
 MONO = ("Consolas", 9)
 UI = ("Segoe UI", 10)
 
-# Les etapes, avec leur poids EN SECONDES.  Ces valeurs sont les medianes
-# mesurees sur treize executions ; elles ne servent que de repli au premier
-# lancement, `timings.json` prenant le relais des qu'il existe.
+# Les etapes, avec leur poids EN SECONDES.  Repli du premier lancement
+# seulement : `timings.json` prend le relais des qu'il existe.
 #
-# La cle est le nom sous lequel Update.py imprime la duree de fin d'etape,
-# quand il en imprime une. Le dernier champ dit combien de fois l'etape
-# parcourt l'univers : l'etape 1 le fait deux fois, donc ses sous-lignes
-# « [n/63] » vont jusqu'a 126.
+# CES VALEURS SONT MESUREES A LA PENDULE, ET LA PREMIERE SERIE NE L'ETAIT PAS.
+# Elle etait tiree des durees que les journaux impriment (« ok (210s) »), qui
+# ne couvrent que les cinq etapes numerotees : le demarrage du fournisseur de
+# donnees, les verifications et le deploiement n'y figuraient pas, et je les
+# avais estimes. Mal, d'un facteur dix pour certains -- 6 s devines contre 70 s
+# reels pour NDU, 6 contre 46 pour la verification du site, 60 contre 104 pour
+# le deploiement, qui attend desormais que Pages serve la publication. Ces
+# quatre-la font a elles seules la moitie de l'attente. Total suppose : 5 min ;
+# reel : 8 min 11 s.
+#
+# UN SEUL RELEVE, donc, et assume comme tel : il vaut infiniment mieux que des
+# suppositions, et la mediane glissante le corrige des la deuxieme execution.
+# `deploy` est le plus variable des onze -- il depend de la latence du CDN de
+# GitHub, observee entre 56 s et 104 s.
+#
+# Le dernier champ dit combien de fois l'etape parcourt l'univers : l'etape 1
+# le fait deux fois, donc ses sous-lignes « [n/63] » vont jusqu'a 126.
 PHASES = [
-    ("ndu",       re.compile(r"^\s*NDU\s+\(start"),        "Data updater",       6, 1),
-    ("STAGE 1/5", re.compile(r"^\s*STAGE 1/5"),            "Roll cycles",      215, 2),
-    ("v1",        re.compile(r"^\s*VERIFY\s+stage 1"),     "Checking stage 1",   2, 1),
+    ("ndu",       re.compile(r"^\s*NDU\s+\(start"),        "Data updater",      70, 1),
+    ("STAGE 1/5", re.compile(r"^\s*STAGE 1/5"),            "Roll cycles",      209, 2),
+    ("v1",        re.compile(r"^\s*VERIFY\s+stage 1"),     "Checking stage 1",   6, 1),
     ("STAGE 2/5", re.compile(r"^\s*STAGE 2/5"),            "Trading books",     10, 1),
     ("STAGE 3/5", re.compile(r"^\s*STAGE 3/5"),            "Portfolio",          5, 1),
-    ("STAGE 4/5", re.compile(r"^\s*STAGE 4/5"),            "Order ledger",       1, 1),
-    ("STAGE 4b",  re.compile(r"^\s*STAGE 4b"),             "Journal",            2, 1),
-    ("vbars",     re.compile(r"^\s*VERIFY\s+vendor bars"), "Verifying books",    4, 1),
-    ("STAGE 5/5", re.compile(r"^\s*STAGE 5/5"),            "Publishing",        15, 1),
-    ("vpub",      re.compile(r"^\s*VERIFY\s+publication"), "Checking the site",  6, 1),
-    ("deploy",    re.compile(r"^\s*DEPLOY"),               "Deploying",         60, 1),
+    ("STAGE 4/5", re.compile(r"^\s*STAGE 4/5"),            "Order ledger",       2, 1),
+    ("STAGE 4b",  re.compile(r"^\s*STAGE 4b"),             "Journal",            3, 1),
+    ("vbars",     re.compile(r"^\s*VERIFY\s+vendor bars"), "Verifying books",   21, 1),
+    ("STAGE 5/5", re.compile(r"^\s*STAGE 5/5"),            "Publishing",        16, 1),
+    ("vpub",      re.compile(r"^\s*VERIFY\s+publication"), "Checking the site", 46, 1),
+    ("deploy",    re.compile(r"^\s*DEPLOY"),               "Deploying",        104, 1),
 ]
 
 SUB = re.compile(r"^\s*\[\s*(\d+)/\s*(\d+)\]")
@@ -156,6 +168,45 @@ def human(s):
     return f"{s}s" if s < 60 else f"{s // 60}m {s % 60:02d}s"
 
 
+def dark_titlebar(root):
+    """Assombrir la barre de titre, que Tk ne peint pas.
+
+    La barre de titre appartient au gestionnaire de fenetres, pas au
+    programme : un bandeau blanc restait donc pose sur une application
+    entierement sombre. C'est DWM qui l'expose, et il faut le demander en
+    deux temps parce que Windows a change d'API en cours de route --
+    l'attribut 20 depuis la 2004, l'attribut 19 avant. On tente les deux et
+    on garde celui qui repond.
+
+    Sur Windows 11 on va plus loin : 34/35/36 posent la couleur exacte du
+    cadre, du fond et du titre, ce qui evite le gris standard du mode sombre
+    a cote de notre propre noir. Les versions plus anciennes refusent ces
+    attributs, sans consequence : le mode sombre generique a deja fait
+    l'essentiel.
+
+    Rien ici ne peut faire echouer le lancement -- c'est de la peinture.
+    """
+    try:
+        import ctypes
+        root.update_idletasks()          # le handle n'existe qu'apres
+        hwnd = ctypes.windll.user32.GetParent(root.winfo_id()) \
+            or root.winfo_id()
+        dwm = ctypes.windll.dwmapi
+        on = ctypes.c_int(1)
+        for attr in (20, 19):            # USE_IMMERSIVE_DARK_MODE
+            if dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(on),
+                                         ctypes.sizeof(on)) == 0:
+                break
+        # COLORREF est 0x00BBGGRR, l'inverse de l'ordre habituel.
+        rgb = lambda h: ctypes.c_int(int(h[5:7] + h[3:5] + h[1:3], 16))
+        for attr, col in ((34, PAGE), (35, PAGE), (36, ACCENT)):
+            v = rgb(col)
+            dwm.DwmSetWindowAttribute(hwnd, attr, ctypes.byref(v),
+                                      ctypes.sizeof(v))
+    except Exception:
+        pass
+
+
 class App:
     def __init__(self, root):
         self.root = root
@@ -197,6 +248,7 @@ class App:
 
         self._style()
         self._build()
+        dark_titlebar(root)
 
         threading.Thread(target=self.run, daemon=True).start()
         root.after(80, self.pump)
