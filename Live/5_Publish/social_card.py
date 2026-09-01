@@ -29,6 +29,39 @@ NEG = "#9b2226"
 W, H, DPI = 1200, 630, 100
 
 
+def draw_crest(fig, plt):
+    """Le blason du site, en haut a droite de la carte.
+
+    DESSINE, PAS IMPORTE. Le meme blason existe en SVG dans docs/, mais le
+    lire ici supposerait un moteur de rendu vectoriel dans le pipeline --
+    une dependance de plus pour un ornement, et la carte a justement pour
+    regle de ne jamais pouvoir faire echouer une publication. La geometrie
+    est partagee avec les icones via crest.py ; seul le trace differe.
+
+    En haut a DROITE : le titre et les chiffres occupent la gauche, et une
+    marque posee la n'entrerait en concurrence avec rien.
+    """
+    from matplotlib.patches import Circle, Polygon
+    import crest
+
+    # De la grille 0..100 du blason vers les coordonnees de figure.
+    size, x0, y0 = 0.132, 0.845, 0.655
+    m = lambda p: (x0 + p[0] / 100.0 * size,
+                   y0 + (100 - p[1]) / 100.0 * size * W / H)
+
+    fig.add_artist(Polygon([m(p) for p in crest.outline()], closed=True,
+                           facecolor=INK, edgecolor="none", zorder=3))
+    # Les fentes et l'arc sont repeints dans la couleur du fond : sur une
+    # carte au fond plein c'est exact, et cela evite un masque que
+    # matplotlib rendrait mal a cette taille.
+    for j in range(crest.N - 1):
+        fig.add_artist(Polygon([m(q) for q in crest.slot(j)], closed=True,
+                               facecolor=PAGE, edgecolor="none", zorder=4))
+    c = m((50.0, crest.BOT_LINE))
+    fig.add_artist(Circle(c, crest.arc_r() / 100.0 * size,
+                          facecolor=PAGE, edgecolor="none", zorder=4))
+
+
 def render(out_path, dates, equity, stats: dict, url: str) -> None:
     """Ecrit la carte. Lever une exception ici est sans consequence."""
     import matplotlib
@@ -68,10 +101,14 @@ def render(out_path, dates, equity, stats: dict, url: str) -> None:
         fig.text(x, y, s, fontsize=size, color=color, fontweight=weight,
                  fontfamily=family, va="baseline")
 
+    draw_crest(fig, plt)
     txt(0.055, 0.815, "Systematic futures", 44, INK, "bold")
     txt(0.055, 0.735, "2026 paper-trading run, published every session", 21, MUTED)
 
-    fig.add_artist(plt.Line2D([0.055, 0.945], [0.700, 0.700],
+    # Le filet s'arrete AVANT le blason. A 0,945 il lui passait dessous :
+    # invisible parce que le blason est au-dessus, mais il ressortait de
+    # part et d'autre comme un trait qui traverse la marque.
+    fig.add_artist(plt.Line2D([0.055, 0.805], [0.700, 0.700],
                               color=RULE, linewidth=1.2))
 
     # Quatre chiffres, pas huit : ce qui doit survivre a une vignette lue en

@@ -1,11 +1,8 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Une ligne qui monte, et rien d'autre. A 16 px un glyphe n'a droit qu'a
-       une idee : tout ce qui ressemble a un logo devient une tache grise.
-       La couleur suit le theme de la barre d'onglets, pas celui du site. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
   <style>
-    path { stroke: #14213d; }
-    @media (prefers-color-scheme: dark) { path { stroke: #e6e6e6; } }
+    .m { fill: #14213d; }
+    @media (prefers-color-scheme: dark) { .m { fill: #e6e6e6; } }
   </style>
-  <path d="M3 25 L11 17 L15 20 L21 9 L26 5" fill="none" stroke-width="3.6"
-        stroke-linecap="round" stroke-linejoin="round"/>
+  <mask id="m"><polygon points="8.25,24.20 19.41,24.20 26.33,16.60 37.50,16.60 44.42,9.00 55.58,9.00 62.50,16.60 73.67,16.60 80.59,24.20 91.75,24.20 91.75,57.00 64.19,94.00 35.80,94.00 8.25,57.00" fill="#fff"/><polygon points="19.41,-6.00 26.33,-6.00 26.33,57.00 43.37,99.00 41.44,99.00 19.41,57.00" fill="#000"/><polygon points="37.50,-6.00 44.42,-6.00 44.42,57.00 48.44,99.00 46.50,99.00 37.50,57.00" fill="#000"/><polygon points="55.58,-6.00 62.50,-6.00 62.50,57.00 53.50,99.00 51.56,99.00 55.58,57.00" fill="#000"/><polygon points="73.67,-6.00 80.59,-6.00 80.59,57.00 58.56,99.00 56.63,99.00 73.67,57.00" fill="#000"/><circle cx="50" cy="94.00" r="14.20" fill="#000"/></mask>
+  <rect class="m" width="100" height="100" mask="url(#m)"/>
 </svg>
