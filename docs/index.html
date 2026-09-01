@@ -52,7 +52,7 @@
      they pair, a stacked nine-column table spreads over ~1300px again.  The cap
      holds them at the density they have everywhere else; it never binds once
      paired, because a pane is narrower than this. */
-  #pending,#executed,#outstanding{max-width:1150px}
+  #pending,#executed,#outstanding,#episodes{max-width:1150px}
   .pair{display:block}
   @media (min-width:1440px){
     .pair{display:flex;gap:34px;align-items:flex-start}
@@ -156,9 +156,6 @@
 
 <div id="epwrap" hidden>
   <h2>Drawdown episodes</h2>
-  <p class="note">Every fall from a high and what it took to come back. The
-     chart above shows the shape; this dates it. A drawdown still running has
-     no recovery date, and is the highlighted row.</p>
   <div class="scroll"><table class="num" id="episodes"></table></div>
 </div>
 
