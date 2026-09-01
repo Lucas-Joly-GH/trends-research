@@ -1551,6 +1551,88 @@ def verify_stages(started: float) -> int:
 RECONCILE = HERE / "4_Bookkeeping" / "Reconciliation_check" / "reconcile.py"
 
 
+SITE = "https://lucas-joly-gh.github.io/trends-research/"
+
+
+def confirm_live(timeout_s: int = 300, every_s: int = 8) -> bool:
+    """Attendre que le site SERVE reellement ce qu'on vient de pousser.
+
+    POURQUOI PAS L'ETAT DU WORKFLOW.  L'API qui le donne demande a
+    s'authentifier, donc un jeton a stocker quelque part -- pour repondre a
+    une question plus faible que celle qu'on se pose. « Le build a reussi »
+    n'est pas « la page sert les nouveaux octets » : il reste le CDN entre
+    les deux, et c'est lui qui fait attendre. On interroge donc le resultat
+    final, sans identifiant d'aucune sorte.
+
+    LE MARQUEUR EST DEJA DANS LA CHARGE UTILE. `run.json` porte l'heure de
+    verification et `latest.json` la derniere seance : si les deux valeurs
+    servies en ligne egalent celles du disque, le deploiement est arrive.
+    Rien a inventer, rien a signer.
+
+    Un `False` ne veut pas dire que le deploiement a echoue -- seulement
+    qu'il n'etait pas visible dans le delai. L'appelant doit le dire ainsi.
+    """
+    import urllib.request
+
+    def local(rel, path):
+        try:
+            d = json.loads((HERE.parent / "docs" / "data" / rel)
+                           .read_text(encoding="utf-8"))
+            for k in path:
+                d = d[k]
+            return d
+        except Exception:
+            return None
+
+    def remote(rel, path, nonce):
+        # Le CDN de Pages met en cache par URL complete : une chaine de
+        # requete jamais vue force un aller jusqu'a l'origine. Sans elle on
+        # relirait sa propre reponse d'il y a dix minutes et on conclurait
+        # que rien n'a bouge.
+        url = f"{SITE}data/{rel}?t={nonce}"
+        req = urllib.request.Request(
+            url, headers={"Cache-Control": "no-cache", "Pragma": "no-cache"})
+        try:
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.loads(r.read().decode("utf-8"))
+            for k in path:
+                d = d[k]
+            return d
+        except Exception:
+            return None
+
+    want = {"run.json": (("checked_at",), local("run.json", ("checked_at",))),
+            "latest.json": (("meta", "as_of"),
+                            local("latest.json", ("meta", "as_of")))}
+    want = {k: v for k, v in want.items() if v[1] is not None}
+    if not want:
+        print("  [LIVE] no local marker to compare against; not confirmed.")
+        return False
+
+    deadline = time.time() + timeout_s
+    n = 0
+    while True:
+        n += 1
+        got = {k: remote(k, path, f"{int(time.time())}-{n}")
+               for k, (path, _) in want.items()}
+        behind = [k for k, (path, val) in want.items() if got[k] != val]
+        if not behind:
+            print(f"  [LIVE] the site is serving this run "
+                  f"(confirmed on attempt {n}).")
+            return True
+        if time.time() >= deadline:
+            print(f"  [LIVE] not confirmed after {timeout_s}s. Still behind: "
+                  f"{', '.join(behind)}.")
+            for k in behind:
+                print(f"         {k}: live {got[k]!r} vs local {want[k][1]!r}")
+            print("         The push succeeded; Pages had not served it yet.")
+            return False
+        if n == 1:
+            print(f"  waiting for the site to serve it "
+                  f"(up to {timeout_s // 60} min)...")
+        time.sleep(every_s)
+
+
 def deploy() -> int:
     def git(*args, check=True):
         r = subprocess.run(["git", *args], cwd=str(HERE.parent),
@@ -1645,6 +1727,8 @@ def deploy() -> int:
                 print(f"  run.json alone is committed and pushed "
                       f'("Checked {when}") -- the site can say it was')
                 print("  checked today even though the numbers did not move.")
+                if not confirm_live():
+                    return 2
             else:
                 print("  nothing committed.")
             return 0
@@ -1671,8 +1755,8 @@ def deploy() -> int:
               f'"Publish {as_of}"')
 
         git("push", "origin", "HEAD:main")
-        print(f"  pushed to origin/main -- the site will rebuild in a minute or "
-              f"two.")
+        print("  pushed to origin/main.")
+        live = confirm_live()
         dirty = [l for l in git("status", "--porcelain", "--", ".",
                                 ":!docs").splitlines() if l]
         if dirty:
@@ -1680,7 +1764,10 @@ def deploy() -> int:
                   f"site now shows results")
             names = [l.split(maxsplit=1)[-1] for l in dirty[:3]]
             print(f"         from a tree that is not fully committed: {names}")
-        return 0
+        # 2, pas 1 : rien n'a echoue. Le pipeline a tout fait et la poussee est
+        # partie ; seule la mise en ligne n'etait pas visible a temps. Un code
+        # distinct laisse l'interface le dire sans crier a l'erreur.
+        return 0 if live else 2
     except RuntimeError as e:
         print(f"  [FAILED] {e}")
         print("           The data is written and verified; only the deploy "
@@ -2819,13 +2906,22 @@ def main() -> int:
             if not args.no_bookkeeping:
                 print(f"  orders-> {HERE / '4_Bookkeeping'}")
         if published:
-            note = ("pushed" if deployed == 0 and not args.no_deploy
+            note = ("pushed and live" if deployed == 0 and not args.no_deploy
+                    else "pushed; NOT LIVE YET" if deployed == 2
                     else "written; deploy by hand")
             print(f"  site  -> {HERE.parent / 'docs' / 'data'}   ({note})")
         if failures:
             print(f"  {failures} VERIFICATION FAILURE(S) -- see above")
         print(f"{'=' * 72}")
-    return 1 if failures else 0
+    # TROIS ISSUES, PAS DEUX. 0 : tout est passe ET le site sert cette
+    # execution. 1 : quelque chose a echoue. 3 : rien n'a echoue mais la mise
+    # en ligne n'etait pas visible dans le delai -- ce n'est pas une reussite,
+    # puisque le site ne montre pas encore ce travail, et ce n'est pas un
+    # echec, puisqu'il n'y a rien a corriger. Les confondre ferait mentir la
+    # fenetre dans un sens ou dans l'autre.
+    if failures:
+        return 1
+    return 3 if deployed == 2 else 0
 
 
 if __name__ == "__main__":

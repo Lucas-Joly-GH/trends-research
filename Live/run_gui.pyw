@@ -33,6 +33,8 @@ PHASES = [
 SUB = re.compile(r"^\s*\[\s*(\d+)/\s*(\d+)\]")
 DONE = re.compile(r"pipeline complete in (.+)$")
 SUITE = re.compile(r"^\s*(\d+)/(\d+) passed")
+# La confirmation de mise en ligne, telle que Update.py la journalise.
+LIVE = re.compile(r"^\s*\[LIVE\]\s*(.+?)\s*$")
 BAD = re.compile(r"\[FAIL\]|\[ABORT\]|Traceback")
 # Les marches qui n'ont pas avance, et pourquoi. Update.py imprime cette
 # ligne apres le releve du panel ; la fenetre la retient pour le resume,
@@ -52,6 +54,7 @@ class App:
         self.sub_seen = 0
         self.checks = 0
         self.failed_checks = 0
+        self.live = ""
         self.summary = ""
         self.held = ""
         self.logpath = None
@@ -155,6 +158,9 @@ class App:
         h = HOLD.match(line)
         if h:
             self.held = h.group(1)
+        v = LIVE.match(line)
+        if v:
+            self.live = v.group(1)
         d = DONE.search(line)
         if d:
             self.summary = d.group(1).strip()
@@ -165,11 +171,37 @@ class App:
     def finish(self, rc, fatal=""):
         self.rc = rc
         ok = rc == 0
+        # SUCCESS NE S'AFFICHE QUE SI LE SITE SERT DEJA CETTE EXECUTION.
+        # Avant, la fenetre disait SUCCESS des que la poussee etait partie :
+        # on refermait, on ouvrait le site, et il montrait encore la veille.
+        # Le code 3 dit « rien n'a echoue, mais ce n'est pas encore en ligne »
+        # -- ni vert ni rouge, parce que ce n'est ni l'un ni l'autre et qu'il
+        # n'y a rien a corriger, seulement a attendre.
+        pending = rc == 3
         self.bar["value"] = 1000
         self.phase.config(text="")
         self.detail.config(text="")
-        self.result.config(text="SUCCESS" if ok else "FAILED",
-                           fg="#176b45" if ok else "#9b2226")
+        self.result.config(
+            text="SUCCESS" if ok else "NOT LIVE YET" if pending else "FAILED",
+            fg="#176b45" if ok else "#8a6d1f" if pending else "#9b2226")
+        if pending:
+            bits = []
+            if self.summary:
+                bits.append(f"completed in {self.summary}")
+            if self.checks:
+                bits.append(f"{self.checks} checks passed")
+            txt = "   ·   ".join(bits)
+            txt += chr(10) + "Everything ran and the push went out, but the "
+            txt += "site was not serving it yet."
+            if self.live:
+                txt += chr(10) + self.live
+            if self.held:
+                txt += chr(10) + self.held
+            self.note.config(text=txt)
+            if self.logpath and self.logpath.exists():
+                self.logbtn.config(state="normal")
+            self.closebtn.config(text="Close")
+            return
         if fatal:
             self.note.config(text=fatal)
         elif ok:
@@ -179,6 +211,8 @@ class App:
             if self.checks:
                 bits.append(f"{self.checks} checks passed")
             txt = "   ·   ".join(bits)
+            if self.live:
+                txt += chr(10) + self.live
             if self.held:
                 txt += chr(10) + self.held
             self.note.config(text=txt)
