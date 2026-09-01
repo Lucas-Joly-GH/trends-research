@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Systematic futures — 2026 run</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=f21e0693">
+<link rel="stylesheet" href="site.css?v=55dfc9fe">
 <style>
   /* Plain: white ground, black text, browser default face, no colour.
      Rules and alignment do the work. */
@@ -69,6 +69,10 @@
      white-space:normal;vertical-align:bottom}
   th.l,td.l{text-align:left}
   .num{font-variant-numeric:tabular-nums}
+  /* The one row a reader is actually in today. `table()` emits no row
+     classes -- it is shared by five tables that do not want them -- so the
+     class is put on afterwards rather than by widening the helper. */
+  tr.hl td{background:var(--panel)}
   .scroll{overflow-x:auto}
   .stats td,.stats th{border:none;padding:2px 26px 2px 0;text-align:left}
   .stats{width:auto;margin-bottom:14px}
@@ -150,6 +154,14 @@
   </div>
 </div>
 
+<div id="epwrap" hidden>
+  <h2>Drawdown episodes</h2>
+  <p class="note">Every fall from a high and what it took to come back. The
+     chart above shows the shape; this dates it. A drawdown still running has
+     no recovery date, and is the highlighted row.</p>
+  <div class="scroll"><table class="num" id="episodes"></table></div>
+</div>
+
 <div class="pair">
   <div class="pane">
     <h2>Pending — to be sent at the next open</h2>
@@ -178,7 +190,9 @@
     <ol class="notes" id="notes"></ol>
    </div>
    <div class="fcol">
-  <p><b>Checking this yourself.</b> Each executed row shows the open it filled at
+  <p class="note"><b>Nothing here is rewritten after the fact.</b> Every session's file is committed to the public repository the morning it is produced, and GitHub timestamps the commit. The orders on this page were published before the open they were sent to, and the history that proves it is not mine to edit — it is in the <a href="https://github.com/Lucas-Joly-GH/trends-research/commits/main/docs/data">commit log</a>.</p>
+
+  <p class="note"><b>Checking this yourself.</b> Each executed row shows the open it filled at
      and the close it was decided on. Contract point values are on the
      <a href="mapping.html">Mapping</a> page,
      so <code>qty × (close − open) × pointsize × FX</code> reproduces the
@@ -194,7 +208,7 @@
   </div>
 </footer>
 
-<script src="app.js?v=f21e0693"></script>
+<script src="app.js?v=55dfc9fe"></script>
 <script>
 fetch(bust("data/latest.json")).then(r=>r.json()).then(d=>{
   const m = d.meta;
@@ -251,7 +265,9 @@ fetch(bust("data/latest.json")).then(r=>r.json()).then(d=>{
   // thing they had to wade through. Moving it to the foot keeps every word and
   // costs the summary nothing.
   el("notes").innerHTML = [
-    `Net of commission. ${"$" + fmtMoney(m.cost_window_USD)} over these `
+    `Net of trading cost — one full tick of spread each way plus fees, `
+    + `not commission alone; the Mapping page builds it per contract. `
+    + `${"$" + fmtMoney(m.cost_window_USD)} over these `
     + `${m.sessions} sessions, ${pct(m.cost_window_USD/m.equity_start)} of the `
     + `opening balance, running at ${pct(m.cost_ann)} a year at this trading `
     + `pace. Every return on this page is after it.`,
@@ -262,7 +278,7 @@ fetch(bust("data/latest.json")).then(r=>r.json()).then(d=>{
     + `${pct(m.interest_ann)} a year. It is inside the net asset value but `
     + `inside neither annualised rate.`,
 
-    `Trading only — after commission, before interest — which is the basis the `
+    `Trading only — after trading cost, before interest — which is the basis the `
     + `volatility and the Sharpe use. The mean daily return scaled by 256.`,
 
     `The same series compounded rather than averaged. Over a window this short `
@@ -361,6 +377,28 @@ fetch(bust("data/history.json")).then(r=>r.json()).then(h=>{
   el("dcap").textContent =
     `Peak-to-trough on net asset value, after costs and interest. `
     + `Deepest ${pct(dd[k])} on ${d[k].date}; currently ${pct(dd[dd.length-1])}.`;
+  // THE EPISODES SIT OUTSIDE `.split`, not under the chart in the right
+  // column: `balance()` sizes the two columns against each other, and a table
+  // growing inside one of them is exactly what that measurement cannot see.
+  // Full width below the split reads as "under the drawdown chart" anyway,
+  // because the right column ends there.
+  const ep = h.episodes || [];
+  if (ep.length) {
+    el("epwrap").hidden = false;
+    table(el("episodes"), ep, [
+      {label: "Peak",          get: r => r.peak, l: true},
+      {label: "Trough",        get: r => r.trough, l: true},
+      {label: "Recovered",     get: r => r.recovered || "not yet", l: true},
+      {label: "Depth",         get: r => pct(r.depth)},
+      {label: "Sessions down", get: r => r.to_trough},
+      {label: "To recover",    get: r => r.to_recover == null ? "—"
+                                                              : r.to_recover},
+    ]);
+    ep.forEach((r, i) => {
+      if (r.ongoing) el("episodes").tBodies[0].rows[i].className = "hl";
+    });
+  }
+
   // AFTER the captions: they are two lines of the right column's height, and
   // balancing without them measured a column 40px shorter than it ends up.
   afterCharts = balance;

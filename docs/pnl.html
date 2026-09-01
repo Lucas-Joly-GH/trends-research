@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Daily P&amp;L &mdash; 2026 run</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=f21e0693">
+<link rel="stylesheet" href="site.css?v=55dfc9fe">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -46,6 +46,11 @@
   @media (max-width:900px){ .split{display:block}
                             .col-r{position:static;margin-top:20px} }
 
+  /* Every other page wraps its wide tables in this; pnl.html was the one
+     that never did, so the 63-row statement -- whose cells are nowrap by
+     design, a P&L line that folds is unreadable -- overflowed the body on a
+     phone instead of scrolling inside its own box. */
+  .scroll{overflow-x:auto}
   table.data{border-collapse:collapse;width:100%;font-size:13px}
   table.data th,table.data td{padding:3px 8px;text-align:right;
     border-bottom:1px solid var(--rule);white-space:nowrap}
@@ -95,12 +100,12 @@
 
     <div class="split">
       <div class="col-l">
-        <table class="data num" id="sheet"></table>
+        <div class="scroll"><table class="data num" id="sheet"></table></div>
       </div>
 
       <div class="col-r">
         <h3>Reconciliation to net asset value</h3>
-        <table class="data num" id="walk"></table>
+        <div class="scroll"><table class="data num" id="walk"></table></div>
         <p class="note" style="margin-top:8px" id="walknote"></p>
         <div id="notes"></div>
       </div>
@@ -128,7 +133,7 @@
   </div>
 </footer>
 
-<script src="app.js?v=f21e0693"></script>
+<script src="app.js?v=55dfc9fe"></script>
 <script>
 let DAYS = [], current = null;
 

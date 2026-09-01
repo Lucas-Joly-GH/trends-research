@@ -97,7 +97,11 @@ const C = {
   kind:   {label: "Why",            get: r => r.kind, l: true},
   open:   {label: "Fill open",      get: r => fmtPx(r.fill_open)},
   close:  {label: "Decision close", get: r => fmtPx(r.decision_close)},
-  comm:   {label: "Commission $",   get: r => fmtMoney(r.commission_USD)},
+  // « Commission » sous-vendait ce qui est modelise : le cout porte un
+  // tick plein de spread a l'aller comme au retour, en plus des frais.
+  // L'appeler commission invitait le reproche d'ignorer le slippage,
+  // alors qu'il est dedans.
+  comm:   {label: "Trading cost $", get: r => fmtMoney(r.commission_USD)},
   // "PnL $" read as the position's move for the session, which it is not: this
   // is proportional crystallisation.  A trade that adds to a position banks
   // nothing, one that cuts it by half banks half of the P&L accumulated so far,

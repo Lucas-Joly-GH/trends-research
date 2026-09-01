@@ -88,6 +88,8 @@ EXPECT_ANNUAL_COLS = ["year", "ret"]
 EXPECT_CURVE_COLS = ["level", "normal", "cf", "hist", "normal_cvar",
                      "hist_cvar"]
 EXPECT_LIVE_COLS = ["date", "ret"]
+EXPECT_EPISODE_COLS = ["peak", "trough", "recovered", "depth",
+                       "to_trough", "to_recover", "ongoing"]
 HIST_BENCH_COLS = ["month", "book", "bh", "spx", "mix"]
 HIST_BSTAT_COLS = ["key", "name", "total", "vol", "sharpe", "max_dd"]
 HIST_VNSTAT_COLS = HIST_BSTAT_COLS + ["k"]
@@ -120,6 +122,59 @@ def _load(path: Path, name: str):
 
 def _f(x):
     return None if x is None or x != x else float(x)
+
+
+def _dd_episodes(dates: list, equity, top: int = 6,
+                 month: bool = False) -> list[dict]:
+    """Les plus fortes baisses, chacune datee du sommet a la recuperation.
+
+    L'histogramme des drawdowns dit A QUELLE PROFONDEUR on descend et
+    combien de temps on passe sous l'eau, jamais COMBIEN DE TEMPS DURE UNE
+    baisse donnee. Ce sont deux questions differentes, et la seconde est
+    celle qu'on pose reellement : -18 % se supporte en trois semaines, pas
+    en deux ans et demi. Un episode porte donc les deux durees separement
+    -- la descente, puis la remontee -- parce qu'elles n'ont pas la meme
+    nature : la premiere est le risque, la seconde est la patience.
+
+    Un episode ouvert a la derniere barre n'est PAS clos d'office ni
+    ecarte : il sort avec `ongoing` vrai et `recovered` nul. C'est le seul
+    qui compte vraiment pour un lecteur qui regarde la page aujourd'hui,
+    et lui donner une fausse date de sortie serait le pire des trois choix.
+
+    `month` TRONQUE LES DATES AU MOIS, et n'est pas un detail de mise en
+    forme : la fenetre publiee est 2026, seance par seance. Le backtest ne
+    sort d'ici qu'en mensuel ou en annuel -- c'est deja la regle des series
+    de reference -- et six dates journalieres de 2003 la casseraient pour
+    un gain de precision que personne ne lit. Les durees restent en
+    seances, elles : ce sont des comptages, pas des dates.
+    """
+    cut = (lambda x: x[:7]) if month else (lambda x: x)
+    e = np.asarray(equity, dtype=float)
+    peaks = np.maximum.accumulate(e)
+    out: list[dict] = []
+    i, n = 0, len(e)
+    while i < n:
+        if e[i] >= peaks[i]:          # sur le sommet : rien en cours
+            i += 1
+            continue
+        start = i - 1                 # la derniere barre au sommet
+        j = i
+        while j < n and e[j] < peaks[i]:
+            j += 1
+        seg = e[i:j]
+        k = i + int(np.argmin(seg))
+        rec = j < n                   # sinon la baisse court toujours
+        out.append({
+            "peak": cut(dates[start]), "trough": cut(dates[k]),
+            "recovered": cut(dates[j]) if rec else None,
+            "depth": round(float(e[k] / peaks[i] - 1.0), 6),
+            "to_trough": k - start,
+            "to_recover": (j - k) if rec else None,
+            "ongoing": not rec,
+        })
+        i = j
+    out.sort(key=lambda r: r["depth"])
+    return out[:top]
 
 
 def _guard(name: str, rows: list[dict], allowed: list[str]) -> list[dict]:
@@ -350,7 +405,13 @@ def build() -> tuple[dict, dict, list, dict]:
     index, days = build_days(tb, pl.read_parquet(BK / "Orders.parquet"), opens)
     latest = {"meta": meta, "executed": ex_rows, "pending": pd_rows,
               "outstanding": ot_rows}
-    history = {"meta": {"as_of": as_of, "sessions": len(d)}, "daily": daily}
+    # En journalier ici, contrairement au backtest : cette fenetre EST
+    # publiee seance par seance, et dater la baisse en cours au jour pres est
+    # precisement ce qu'on demande a la page.
+    history = {"meta": {"as_of": as_of, "sessions": len(d)}, "daily": daily,
+               "episodes": _guard("history episodes",
+                                  _dd_episodes(d, eq, top=4),
+                                  EXPECT_EPISODE_COLS)}
     return latest, history, index, days
 
 
@@ -1164,6 +1225,9 @@ def build_expectations() -> dict:
         "dd_quantiles": [round(float(np.quantile(bdd, q)), 6)
                          for q in (0.5, 0.1, 0.01, 0.0)],
         "dd_underwater": round(float((bdd < -0.0001).mean()), 4),
+        "dd_episodes": _guard("expect dd episodes",
+                              _dd_episodes(bt_dates, bt_eq, month=True),
+                              EXPECT_EPISODE_COLS),
         "horizon_hist": horizon_hist, "annual": annual, "qq": qq,
         "curve": curve, "live_returns": live_rows, "dd_hist": dd_hist,
         # Les quatre benchmarks sur le backtest, en mensuel (cf. _hist_bench).
