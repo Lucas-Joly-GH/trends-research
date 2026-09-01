@@ -30,25 +30,6 @@
   tr.cls td{background:var(--panel);font-weight:bold;text-align:left;
             border-bottom:1px solid var(--rule-strong);padding-top:7px}
   .num{font-variant-numeric:tabular-nums}
-  .verdict{display:grid;gap:12px;margin:16px 0 12px;
-           grid-template-columns:repeat(auto-fit,minmax(230px,1fr));max-width:1150px}
-  /* `>` EST ESSENTIEL. En descendant, ce selecteur attrapait aussi .k, .v et
-     .d -- qui sont des div -- si bien que chaque carte se dessinait en trois
-     boites bordees empilees au lieu d'une seule. C'est ce qui donnait a la
-     section son air de tableau mal deguise. */
-  .verdict > div{border:1px solid var(--rule);border-left:3px solid var(--faint);
-                 background:var(--panel);padding:12px 15px 13px}
-  .verdict .k{font-size:10.5px;color:var(--muted);text-transform:uppercase;
-              letter-spacing:.8px;margin:0 0 6px}
-  .verdict .v{font-size:18px;line-height:1.15;margin:0 0 7px}
-  .verdict .d{font-size:12px;color:var(--muted);line-height:1.45}
-  /* Le verdict se lit avant d'etre lu : la barre de gauche et le mot portent
-     la meme couleur. Vert quand la prevision tient, orange quand le realise
-     s'en ecarte, gris quand rien n'a encore pu la mettre a l'epreuve. */
-  .verdict .ok{border-left-color:var(--pos)}   .verdict .ok .v{color:var(--pos)}
-  .verdict .off{border-left-color:var(--c2)}   .verdict .off .v{color:var(--c2)}
-  .verdict .bad{border-left-color:var(--neg)}  .verdict .bad .v{color:var(--neg)}
-  .verdict .none .v{color:var(--muted)}
   .key{font-size:12px;color:var(--muted);margin:2px 0 14px}
   .key i{font-style:normal;display:inline-block;width:10px;height:10px;
          margin:0 5px 0 14px}
@@ -80,8 +61,6 @@
 
 <h1>Historical expectations</h1>
 <p class="note" id="sub"></p>
-
-<div class="verdict" id="verdict"></div>
 
 <h2 id="daily">Daily returns</h2>
 <div class="pair">
@@ -168,23 +147,6 @@ el("sub").textContent =
   "Backtest " + j.backtest_start + " to " + j.backtest_end + ", "
   + bt.n.toLocaleString(L) + " sessions. Live " + j.live_start + " to "
   + j.live_end + ", " + lv.n + " sessions.";
-
-// Quatrieme champ : le statut, qui colore la barre et le mot. « untested »
-// n'est ni bon ni mauvais -- 172 seances sans crise ne valident rien -- donc
-// il reste gris plutot que de se faire passer pour un succes.
-el("verdict").innerHTML = [
-  ["Shape", "matches",
-   "skew " + sg(bt.skew) + " predicted, " + sg(lv.skew) + " realised", "ok"],
-  ["Distribution", j.ks_reject ? "rejected" : "cannot reject",
-   "Kolmogorov-Smirnov " + j.ks_d.toFixed(3) + " against " + j.ks_crit.toFixed(3)
-   + " critical at 5%", j.ks_reject ? "bad" : "ok"],
-  ["Scale", "below spec", P2(lv.sd * ANN) + " annualised against "
-   + P2(bt.sd * ANN), "off"],
-  ["Tail", "untested", "excess kurtosis " + sg(lv.kurt) + " against "
-   + sg(bt.kurt) + "; no crisis in " + lv.n + " sessions", "none"],
-].map(c => '<div class="' + c[3] + '"><div class="k">' + c[0]
-           + '</div><div class="v">' + c[1]
-           + '</div><div class="d">' + c[2] + "</div></div>").join("");
 
 // Les deux graphiques de comparaison ne partent pas au debut du backtest mais
 // en 1998, faute d'historique S&P avant. Le dire dans le titre evite de le
