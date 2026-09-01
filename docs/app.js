@@ -340,19 +340,40 @@ addEventListener("resize", () => {
 // passer un site verifie le matin meme pour un site abandonne depuis
 // vendredi. run.json vit a part parce qu'il est le seul fichier autorise a
 // avancer quand le payload, lui, ne bouge pas.
-const fmtStamp = t => t.replace("T", " ").replace("+00:00", " UTC");
+// L'ETIQUETTE EST A L'HEURE DU LECTEUR, LA REFERENCE RESTE EN UTC.
+// Publier en UTC est juste pour un lecteur etranger et trompeur pour celui
+// qui vient de lancer le pipeline : a Paris l'ete, une execution de 09h22
+// s'affiche 07h22 et parait perimee de deux heures. On rend donc l'heure
+// locale du navigateur dans le texte, et on garde l'UTC dans l'infobulle
+// pour qui doit citer une heure sans ambiguite.
+const fmtUTC = t => t.replace("T", " ").replace("+00:00", " UTC");
+const fmtLocal = t => {
+  const d = new Date(t);
+  if (isNaN(d.getTime())) return fmtUTC(t);   // illisible : on montre le brut
+  return d.toLocaleString(undefined, {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit"
+  });
+};
 Promise.all([
   fetch(bust("data/latest.json")).then(r => r.json()).catch(() => null),
   fetch(bust("data/run.json")).then(r => r.json()).catch(() => null),
 ]).then(([d, run]) => {
   const n = el("stamp");
   if (!n) return;
-  const bits = [];
-  if (d && d.meta && d.meta.updated_at)
-    bits.push("Updated " + fmtStamp(d.meta.updated_at));
-  if (run && run.checked_at)
-    bits.push("checked " + fmtStamp(run.checked_at));
-  if (bits.length) n.textContent = bits.join("  ·  ");
+  const bits = [], tips = [];
+  if (d && d.meta && d.meta.updated_at) {
+    bits.push("Updated " + fmtLocal(d.meta.updated_at));
+    tips.push("Updated " + fmtUTC(d.meta.updated_at));
+  }
+  if (run && run.checked_at) {
+    bits.push("checked " + fmtLocal(run.checked_at));
+    tips.push("checked " + fmtUTC(run.checked_at));
+  }
+  if (bits.length) {
+    n.textContent = bits.join("  ·  ");
+    n.title = tips.join("  ·  ");
+  }
 }).catch(() => {});
 
 // ---------------------------------------------------------------
