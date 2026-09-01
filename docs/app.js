@@ -347,27 +347,40 @@ addEventListener("resize", () => {
 // locale du navigateur dans le texte, et on garde l'UTC dans l'infobulle
 // pour qui doit citer une heure sans ambiguite.
 const fmtUTC = t => t.replace("T", " ").replace("+00:00", " UTC");
-const fmtLocal = t => {
+// Meme forme que l'UTC -- AAAA-MM-JJ HH:MM:SS -- mais sur la pendule de
+// Paris. `toLocaleString` suivait la locale du navigateur et rendait
+// « 09/01/2026, 09:10:07 AM » sur un poste en anglais, ou 09/01 se lit
+// aussi bien 9 janvier. On compose donc les champs nous-memes.
+const fmtParis = t => {
   const d = new Date(t);
   if (isNaN(d.getTime())) return fmtUTC(t);   // illisible : on montre le brut
-  return d.toLocaleString(undefined, {
+  const p = {};
+  new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Paris", hourCycle: "h23",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit"
-  });
+  }).formatToParts(d).forEach(x => { p[x.type] = x.value; });
+  return p.year + "-" + p.month + "-" + p.day + " "
+       + p.hour + ":" + p.minute + ":" + p.second;
 };
 Promise.all([
   fetch(bust("data/latest.json")).then(r => r.json()).catch(() => null),
-  fetch(bust("data/run.json")).then(r => r.json()).catch(() => null),
+  // run.json N'ENTRE PAS dans le hachage qui fabrique `?v=` : un jour ou lui
+  // seul bouge, l'empreinte est inchangee et le navigateur ressert sa copie
+  // en cache -- l'heure de verification restait figee alors que le pipeline
+  // avait bien tourne. Son propre parametre le contourne.
+  fetch("data/run.json?t=" + Date.now(), { cache: "no-store" })
+    .then(r => r.json()).catch(() => null),
 ]).then(([d, run]) => {
   const n = el("stamp");
   if (!n) return;
   const bits = [], tips = [];
   if (d && d.meta && d.meta.updated_at) {
-    bits.push("Updated " + fmtLocal(d.meta.updated_at));
+    bits.push("Updated " + fmtParis(d.meta.updated_at));
     tips.push("Updated " + fmtUTC(d.meta.updated_at));
   }
   if (run && run.checked_at) {
-    bits.push("checked " + fmtLocal(run.checked_at));
+    bits.push("checked " + fmtParis(run.checked_at));
     tips.push("checked " + fmtUTC(run.checked_at));
   }
   if (bits.length) {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Journal — 2026 run</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=5bc4f77c">
+<link rel="stylesheet" href="site.css?v=f21e0693">
 <style>
   /* `margin:0` with a max-width pins the page to the left edge: on a 1920px
      window the content sat in the left half and the rest was empty. `auto`
@@ -114,6 +114,13 @@
         <div class="scroll"><table class="data num" id="executed"></table></div>
       </div>
     </div>
+
+    <div id="outwrap" hidden>
+      <h2>Outstanding — given earlier, not yet filled</h2>
+      <p class="note">Carried because the market had no session. An order is
+         given once and carried until it fills.</p>
+      <div class="scroll"><table class="data num" id="outstanding"></table></div>
+    </div>
   </div>
 </div>
 
@@ -140,7 +147,7 @@
   </div>
 </footer>
 
-<script src="app.js?v=5bc4f77c"></script>
+<script src="app.js?v=f21e0693"></script>
 <script>
 let DAYS = [], current = null;
 
@@ -150,11 +157,19 @@ function show(date){
     tr.classList.toggle("on", tr.dataset.d === date));
   fetch(bust(`data/days/${date}.json`)).then(r=>r.json()).then(d=>{
     el("dayhead").textContent = "Session " + d.date;
+    // `outstanding` n'existe pas dans les fichiers jour publies avant cette
+    // version : on retombe sur une liste vide plutot que de casser la page.
+    const out = d.outstanding || [];
     el("daynote").textContent =
-      `${d.given.length} order(s) given, ${d.executed.length} filled.`;
+      `${d.given.length} order(s) given, ${d.executed.length} filled`
+      + (out.length ? `, ${out.length} still outstanding.` : ".");
     table(el("given"), d.given, [C.inst,C.con,C.side,C.qty,C.kind,C.close]);
     table(el("executed"), d.executed,
           [C.inst,C.con,C.side,C.qty,C.kind,C.open,C.close,C.comm,C.real]);
+    el("outwrap").hidden = !out.length;
+    if (out.length)
+      table(el("outstanding"), out,
+            [C.inst,C.con,C.side,C.qty,C.carry,C.reason]);
     if (location.hash.slice(1) !== date) history.replaceState(null,"","#"+date);
   }).catch(e=>{ el("daynote").textContent = "Could not load " + date + " — " + e; });
 }

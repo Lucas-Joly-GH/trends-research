@@ -382,9 +382,24 @@ def build_days(tb, led, opens: dict) -> tuple[list[dict], dict]:
                    "commission_USD": _f(r["commission_USD"]),
                    "realised_pnl_USD": _f(r["realised_pnl_USD"])}
                   for r in exe.get(d, [])]
+        # Les ordres restes en carnet CE JOUR-LA. Le journal en tient un
+        # fichier par seance ; la page d'accueil n'en montrait que le plus
+        # recent, si bien qu'une fois la seance passee la trace disparaissait.
+        # Or c'est justement l'historique qui a un interet : quinze seances
+        # depuis janvier, toutes des jours ou les calendriers divergent.
+        ot = []
+        _op = JOURNAL / "outstanding" / d[:4] / f"{d}.parquet"
+        if _op.is_file():
+            ot = [{"instrument": r["instrument"], "contract": r["contract"],
+                   "action": r["action"], "quantity": _f(r["quantity"]),
+                   "carried_sessions": _f(r["carried_sessions"]),
+                   "reason": r["reason"]}
+                  for r in pl.read_parquet(_op).iter_rows(named=True)]
+            _guard(f"outstanding {d}", ot, OUTSTANDING_COLS)
         _guard(f"given {d}", given, GIVEN_COLS)
         _guard(f"executed {d}", filled, EXECUTED_COLS)
-        days[d] = {"date": d, "given": given, "executed": filled}
+        days[d] = {"date": d, "given": given, "executed": filled,
+                   "outstanding": ot}
         index.append({"date": d, "n_given": len(given),
                       "n_executed": len(filled)})
     _guard("index", index, INDEX_COLS)
