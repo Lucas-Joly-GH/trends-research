@@ -253,7 +253,7 @@ def ties() -> Ties | None:
     start = int(np.argmax(eq > 0))
     flows = pnl_p - np.concatenate([[0.0], cost[:-1]]) + ist
     T.add("G  equity == NAV0 + cumulative flows",
-          float(eq[start]) + float(flows[start + 1:].sum()) - _held,
+          float(eq[start]) + float(flows[start + 1:].sum()) + _held,
           float(eq[-1]))
 
     booked = 0.0
