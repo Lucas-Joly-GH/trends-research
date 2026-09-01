@@ -1551,6 +1551,21 @@ def verify_stages(started: float) -> int:
 RECONCILE = HERE / "4_Bookkeeping" / "Reconciliation_check" / "reconcile.py"
 
 
+# `git status --porcelain` rend « XY<espace>chemin », mais le `git()` de
+# deploy() fait un .strip() sur toute la sortie : la PREMIERE ligne y perd son
+# espace de tete, et un decoupage a offset fixe la decale d'un caractere --
+# « docs/data/latest.json » devient « ocs/data/latest.json », qui ne
+# ressemble plus a un fichier de payload et se fait prendre pour une source.
+# Silencieux, et sur la seule premiere ligne, donc invisible des qu'on teste
+# avec deux fichiers salis. On lit le statut par motif, plus par position.
+_ST_LINE = re.compile(r"^\s*\S{1,2}\s+(.*)$")
+
+
+def status_paths(out: str) -> list:
+    return [m.group(1).strip()
+            for m in (_ST_LINE.match(l) for l in out.splitlines()) if m]
+
+
 SITE = "https://lucas-joly-gh.github.io/trends-research/"
 
 
@@ -1678,9 +1693,8 @@ def deploy() -> int:
         # execution et n'a pas d'auteur.
         def hand_edited():
             out = []
-            for line in git("status", "--porcelain", "--", "docs").splitlines():
-                f = line[3:].strip()
-                if not f or f.startswith("docs/data/"):
+            for f in status_paths(git("status", "--porcelain", "--", "docs")):
+                if f.startswith("docs/data/"):
                     continue
                 d = [l for l in git("diff", "-U0", "--", f).splitlines()
                      if (l.startswith("+") or l.startswith("-"))
@@ -1705,8 +1719,8 @@ def deploy() -> int:
             # revient en arriere comme avant, pour ne pas commiter une
             # pendule dans le payload.
             RUN = "docs/data/run.json"
-            others = [f for f in git("status", "--porcelain", "--", "docs")
-                      .splitlines() if f[3:].strip() != RUN]
+            others = [f for f in status_paths(
+                git("status", "--porcelain", "--", "docs")) if f != RUN]
             if others:
                 git("checkout", "--", "docs", ":!" + RUN)
             print(f"  docs/ differs only in timestamps and the asset stamp "
