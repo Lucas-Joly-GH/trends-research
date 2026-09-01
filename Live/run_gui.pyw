@@ -38,6 +38,14 @@ PY = REPO / ".venv" / "Scripts" / "python.exe"
 UPDATE = BASE / "Update.py"
 LOGDIR = BASE / "logs"
 TIMINGS = LOGDIR / "timings.json"
+# LE CARNET DES EXECUTIONS.  timings.json ne garde que des durees ; celui-ci
+# garde ce qu'il faut pour COMPARER une execution aux precedentes -- nombre
+# de controles, seance publiee, verdict. Sans memoire d'un jour sur l'autre,
+# la fenetre ne peut rien dire d'autre que « ca s'est bien passe », ce qui
+# est precisement ce qu'elle disait pendant que le controle de rendu ne
+# tournait plus.
+RUNS = LOGDIR / "runs.json"
+LATEST = None          # rempli au demarrage : docs/data/latest.json
 SITE = "https://lucas-joly-gh.github.io/trends-research/"
 
 # LA PALETTE EST CELLE DU THEME SOMBRE DU SITE, recopiee.  L'outil qui publie
@@ -164,6 +172,69 @@ def save_timings(observed):
         TIMINGS.write_text(json.dumps(hist, indent=1), encoding="utf-8")
     except Exception:
         pass
+
+
+def load_runs():
+    try:
+        return json.loads(RUNS.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def save_run(rec):
+    """Garder les trente dernieres executions. Une memoire courte suffit :
+    on compare a la semaine ecoulee, pas a l'annee."""
+    try:
+        LOGDIR.mkdir(exist_ok=True)
+        hist = load_runs()
+        hist.append(rec)
+        RUNS.write_text(json.dumps(hist[-30:], indent=1), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def read_latest():
+    """La charge utile publiee, pour savoir ce que le carnet a fait."""
+    try:
+        return json.loads((REPO / "docs" / "data" / "latest.json")
+                          .read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def book_line(latest):
+    """Ce que le livre a fait aujourd'hui, en une ligne.
+
+    C'est la NOUVELLE du jour, et elle n'etait visible que sur le site.
+    « RESIZE » domine toujours -- la taille suit la volatilite, tous les
+    jours -- donc on nomme d'abord ce qui est rare : ouvertures, fermetures,
+    roulements. Un jour sans aucune de ces trois est un jour sans evenement,
+    et le dire ainsi vaut mieux que d'aligner des compteurs a zero.
+    """
+    if not latest:
+        return ""
+    ex = latest.get("executed") or []
+    pd = latest.get("pending") or []
+    kind = lambda rows, k: sum(1 for r in rows if r.get("kind") == k)
+    bits = []
+    for k, word in (("OPEN", "opened"), ("CLOSE", "closed")):
+        n = kind(ex, k)
+        if n:
+            bits.append("%d %s" % (n, word))
+    rolls = kind(ex, "ROLL_IN")
+    if rolls:
+        bits.append("%d rolled" % rolls)
+    resized = kind(ex, "RESIZE")
+    if resized:
+        bits.append("%d resized" % resized)
+    head = "Filled: " + ", ".join(bits) if bits else "Filled: nothing"
+    nxt = ""
+    if pd:
+        rare = sum(1 for r in pd
+                   if r.get("kind") in ("OPEN", "CLOSE", "ROLL_IN", "ROLL_OUT"))
+        nxt = ("   ·   %d queued for the next open%s"
+               % (len(pd), " (%d not a resize)" % rare if rare else ""))
+    return head + nxt
 
 
 # Marque la place, dans la note, de la phrase qui dira ce que le panneau
@@ -426,6 +497,13 @@ class App:
                     "<Next>", "<Up>", "<Down>", "<Home>", "<End>"):
             self.term.bind(seq, self.user_scrolled, add="+")
 
+        # LES CONSTATS, entre le flux et le verdict.  Vides pendant
+        # l'execution, ils n'apparaissent qu'a la fin et seulement quand il y
+        # a quelque chose a dire : une zone qui affiche tous les jours la
+        # meme chose cesse d'etre lue.
+        self.insight = tk.Frame(r, bg=PAGE)
+        self.insight.pack(fill="x", padx=20, pady=(0, 6))
+
         # ----------------------------------------------------------- le pied
         foot = tk.Frame(r, bg=PAGE)
         foot.pack(fill="x", padx=20, pady=(0, 14))
@@ -547,7 +625,65 @@ class App:
         self.clock.config(text=f"{human(el)} elapsed   ·   ~{human(eta)} left")
         self.root.after(250, self.tick)
 
-    # ----------------------------------------------------------------lecture
+    # -------------------------------------------------------------- lecture
+    def insights(self, latest):
+        """Ce que cette execution apprend, compare aux precedentes.
+
+        Quatre questions, et on ne repond que lorsque la reponse est
+        NOTABLE : une fenetre qui affiche quatre lignes rassurantes tous
+        les jours n'est plus lue le cinquieme. Le carnet du livre fait
+        exception -- c'est la nouvelle du jour, elle a lieu d'etre chaque
+        fois.
+        """
+        out = []
+        hist = load_runs()
+        past = [r for r in hist if r.get("checks")][-6:]
+
+        # 1. UN CONTROLE QUI DISPARAIT NE DIT RIEN DE LUI-MEME.  Le compte,
+        # lui, le trahit : 169 quand tout tourne, 165 quand le controle de
+        # rendu est saute. Sans cette comparaison, cinq executions de suite
+        # ont publie en annoncant SUCCESS.
+        prev = [r["checks"] for r in past]
+        if prev and self.checks:
+            med = statistics.median(prev)
+            if self.checks < med - 0.5:
+                out.append((NEG, "%d checks — %d fewer than the last %d runs. "
+                                 "Something stopped running."
+                            % (self.checks, round(med - self.checks),
+                               len(prev))))
+            elif self.checks > med + 0.5:
+                out.append((MUTED, "%d checks — %d more than usual."
+                            % (self.checks, round(self.checks - med))))
+
+        # 2. LA NOUVELLE DU JOUR, jusqu'ici visible seulement sur le site.
+        line = book_line(latest)
+        if line:
+            out.append((INK, line))
+
+        # 3. UNE ETAPE QUI DOUBLE SIGNALE QUELQUE CHOSE AVANT TOUT LE RESTE :
+        # un fournisseur lent, un cache froid, un univers qui a grandi.
+        base = load_weights()
+        slow = [(PHASES[i][2], v, base[k])
+                for i, (k, _, _, _, _) in enumerate(PHASES)
+                if (v := self.observed.get(k)) and base.get(k, 0) > 4
+                and v > base[k] * 2]
+        for label, got, exp in slow:
+            out.append((WARN, "%s took %s against a usual %s."
+                        % (label, human(got), human(exp))))
+
+        # 4. UNE SEANCE QUI N'AVANCE PAS N'EST PAS FORCEMENT UNE PANNE : un
+        # jour ferie ressemble a un flux casse. Le pipeline sait laquelle des
+        # deux, via [HOLD] ; on le dit plutot que de laisser deviner.
+        if latest:
+            as_of = (latest.get("meta") or {}).get("as_of")
+            same = [r for r in hist[-5:] if r.get("as_of") == as_of]
+            if as_of and len(same) >= 2:
+                why = ("markets were shut — " + self.held) if self.held                       else "no holiday was reported, which is worth a look"
+                out.append((WARN, "Still on %s after %d runs: %s."
+                            % (as_of, len(same) + 1, why)))
+        return out
+
+
     def on_line(self, line):
         self.lines.append(line)
         if self.passes_filter(line):
@@ -736,6 +872,20 @@ class App:
                                    "all of it, at the end.")
             self.note.config(text=self.note.cget("text").replace(
                 FOCUS_PLACEHOLDER, self.focus_note))
+
+        # ---- les constats, et la trace qui les rendra possibles demain ----
+        latest = read_latest()
+        for colour, line in self.insights(latest):
+            tk.Label(self.insight, text=line, font=("Segoe UI", 9),
+                     fg=colour, bg=PAGE, anchor="w", justify="left"
+                     ).pack(fill="x")
+        meta = (latest or {}).get("meta") or {}
+        save_run({"when": time.strftime("%Y-%m-%d %H:%M"),
+                  "rc": rc, "checks": self.checks,
+                  "failed": self.failed_checks,
+                  "as_of": meta.get("as_of"),
+                  "sessions": meta.get("sessions"),
+                  "render_skipped": bool(self.skipped)})
 
         if self.logpath and self.logpath.exists():
             self.logbtn.config(state="normal")
