@@ -512,7 +512,11 @@ function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData, logY) 
   });
   series.forEach((s, k) => {
     const pts = s.vals.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
-    g += `<polyline fill="none" stroke="${PALETTE[k % PALETTE.length]}" `
+    // `data-k` rend la courbe adressable au survol : sans lui, designer « la
+    // troisieme » supposerait de se fier a l'ordre du DOM, qui n'est pas un
+    // contrat.
+    g += `<polyline data-k="${k}" fill="none" `
+       + `stroke="${PALETTE[k % PALETTE.length]}" `
        + `stroke-width="1.6" points="${pts}"/>`;
   });
   g += `<g class="hv"></g>`;
@@ -526,19 +530,39 @@ function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData, logY) 
   // without covering the chart, so hovering rewrites the legend in place to the
   // values at that date and the caption to the date itself. Same idea as the
   // NAV crosshair, one line of text instead of ten.
-  const legend = i => el(keyId).innerHTML = series.map((s, k) =>
-    `<span><i style="background:${PALETTE[k % PALETTE.length]}"></i>`
+  // `hit` est l'indice de la serie sous le curseur, ou -1. La legende etait
+  // deja le releve des valeurs ; elle devient aussi la reponse a « laquelle
+  // est-ce ? », ce qui evite d'ajouter un second dispositif de lecture.
+  const legend = (i, hit) => el(keyId).innerHTML = series.map((s, k) =>
+    `<span class="${k === hit ? "on" : ""}">`
+    + `<i style="background:${PALETTE[k % PALETTE.length]}"></i>`
     + `${s.name} ${F(s.vals[i])}</span>`).join("");
   const LAST = dates.length - 1;
-  legend(LAST);
+  legend(LAST, -1);
 
   svg._m = {dates, series, W, H, PL, PR, PT, PB, x, y};
   if (!svg._mBound) {
     svg._mBound = true;
+    // DIX COURBES ET AUCUN MOYEN DE SAVOIR LAQUELLE ON REGARDE.  Le survol
+    // donnait la date et les dix valeurs, jamais l'identite de la ligne sous
+    // le curseur -- or c'est la question qu'on se pose en pointant une courbe
+    // qui monte. On epaissit donc celle dont on est le plus proche et on
+    // efface les autres, le temps du survol.
+    const emphasise = hit => {
+      for (const pl of svg.querySelectorAll("polyline[data-k]")) {
+        const on = +pl.dataset.k === hit;
+        pl.setAttribute("stroke-width", on ? "3" : "1.6");
+        // A -1 (curseur loin de tout) rien n'est efface : dimmer les dix
+        // reviendrait a dire « aucune », ce qui est faux -- elles sont
+        // seulement toutes egales.
+        pl.setAttribute("opacity", hit < 0 || on ? "1" : "0.28");
+      }
+    };
     const reset = () => {
       const st = svg._m; if (!st) return;
       const layer = svg.querySelector(".hv"); if (layer) layer.innerHTML = "";
-      svg._legend(st.dates.length - 1);
+      emphasise(-1);
+      svg._legend(st.dates.length - 1, -1);
       if (capId) el(capId).textContent = svg._cap;
     };
     svg.addEventListener("pointerleave", reset);
@@ -551,17 +575,38 @@ function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData, logY) 
       let i = Math.round((sx - st.PL) / span);
       i = Math.max(0, Math.min(st.dates.length - 1, i));
       const px = st.x(i);
+      // LA SERIE LA PLUS PROCHE VERTICALEMENT, et seulement si le curseur en
+      // est vraiment pres. Designer toujours la plus proche ferait nommer une
+      // courbe a l'autre bout du panneau quand on survole du vide -- une
+      // reponse confiante et fausse. Au-dela du seuil, on ne nomme rien.
+      const sy = (ev.clientY - r.top) * (st.H / r.height);
+      let hit = -1, best = 22;
+      st.series.forEach((s, k) => {
+        const dy = Math.abs(st.y(s.vals[i]) - sy);
+        if (dy < best) { best = dy; hit = k; }
+      });
+      const right = px > st.PL + (st.W - st.PL - st.PR) / 2;
       layer.innerHTML =
         `<line class="hv-line" x1="${px}" y1="${st.PT}" x2="${px}" `
         + `y2="${st.H - st.PB}"/>`
         + st.series.map((s, k) =>
-            `<circle cx="${px}" cy="${st.y(s.vals[i]).toFixed(1)}" r="2.5" `
+            `<circle cx="${px}" cy="${st.y(s.vals[i]).toFixed(1)}" `
+            + `r="${k === hit ? 4 : 2.5}" `
+            + `opacity="${hit < 0 || k === hit ? 1 : 0.28}" `
             + `fill="${PALETTE[k % PALETTE.length]}"/>`).join("")
-        + `<text class="hv-text" x="${px > st.PL + (st.W - st.PL - st.PR) / 2
-             ? px - 8 : px + 8}" y="${st.PT + 11}" text-anchor="${
-             px > st.PL + (st.W - st.PL - st.PR) / 2 ? "end" : "start"}">`
-        + `${st.dates[i]}</text>`;
-      svg._legend(i);
+        + `<text class="hv-text" x="${right ? px - 8 : px + 8}" `
+        + `y="${st.PT + 11}" text-anchor="${right ? "end" : "start"}">`
+        + `${st.dates[i]}</text>`
+        // Le nom se pose CONTRE la courbe designee, pas en haut du panneau :
+        // c'est ce qui fait le lien entre le mot et la ligne. Il bascule du
+        // cote oppose au bord pour ne pas sortir du cadre.
+        + (hit < 0 ? "" :
+           `<text class="hv-text hv-name" x="${right ? px - 9 : px + 9}" `
+           + `y="${(st.y(st.series[hit].vals[i]) - 8).toFixed(1)}" `
+           + `text-anchor="${right ? "end" : "start"}">`
+           + `${st.series[hit].name}</text>`);
+      emphasise(hit);
+      svg._legend(i, hit);
       if (capId && capFn) el(capId).textContent = capFn(i, st);
     });
   }

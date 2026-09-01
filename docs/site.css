@@ -255,6 +255,14 @@ svg .hv-line{stroke:var(--ink);stroke-width:.8;stroke-dasharray:2 2}
 svg .hv-dot{fill:var(--ink)}
 svg .hv-text{fill:var(--ink);stroke:var(--page);stroke-width:3;
              paint-order:stroke;font-size:11px}
+/* Le nom de la serie survolee : meme halo que la date, en gras parce qu'il
+   repond a une question posee (« laquelle ? ») plutot que de rappeler un
+   reperage deja visible. */
+svg .hv-name{font-weight:bold}
+/* L'entree de legende correspondante quitte le gris des libelles pour l'encre
+   du texte : la legende est deja le releve des valeurs, elle devient ici le
+   releve de l'identite, sans qu'on ait a chercher ailleurs. */
+.key span.on{color:var(--ink);font-weight:bold}
 
 
 /* ---------------------------------------------------------------- clavier --
