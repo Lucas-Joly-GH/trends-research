@@ -83,10 +83,10 @@ def main() -> int:
     def walk(d):
         b = books[d]["book"]
         return abs(b["opening_equity_USD"] + b["gross_pnl_USD"]
-                   - b["commission_USD"] + b["interest_USD"]
+                   - b["trading_cost_USD"] + b["interest_USD"]
                    - b["closing_equity_USD"])
     worst = max(((d, walk(d)) for d in dates), key=lambda t: t[1])
-    ok("opening + gross - commission + interest == closing",
+    ok("opening + gross - trading cost + interest == closing",
        worst[1] <= TOL_CENTS, f"worst {worst[1]:.2e} on {worst[0]}")
 
     breaks = [(b, abs(books[a]["book"]["closing_equity_USD"]
@@ -107,7 +107,7 @@ def main() -> int:
             b = books[d]["book"]
             for hk, bk in (("equity_USD", "closing_equity_USD"),
                            ("gross_pnl_USD", "gross_pnl_USD"),
-                           ("commission_USD", "commission_USD"),
+                           ("trading_cost_USD", "trading_cost_USD"),
                            ("interest_USD", "interest_USD")):
                 e = abs(H[d][hk] - b[bk])
                 if e > worst_all:
@@ -226,8 +226,12 @@ def report() -> int:
     print(bar)
     print("  VERIFY  the published track, from the published files alone")
     print(bar)
+    wide = max(52, max(len(r[1]) for r in results) + 1)
     for good, label, detail in results:
-        print(f"  [{'OK  ' if good else 'FAIL'}] {label:<52}{detail}")
+        # La largeur suit le libelle le plus long plutot qu'une constante :
+        # un intitule qui depasse collait au detail et rendait la ligne
+        # illisible exactement quand elle importe le plus, en echec.
+        print(f"  [{'OK  ' if good else 'FAIL'}] {label:<{wide}}{detail}")
     bad = sum(1 for g, _, _ in results if not g)
     print("  " + "-" * 68)
     print(f"  {len(results) - bad}/{len(results)} passed"

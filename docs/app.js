@@ -15,6 +15,15 @@ const BUILD = (() => {
 })();
 const bust = u => BUILD ? u + (u.includes("?") ? "&" : "?") + "v=" + BUILD : u;
 
+// LA REQUETE VERS latest.json EST PARTAGEE, PAS REPETEE.  Le bandeau de nav en
+// a besoin sur toutes les pages, et l'accueil comme la page Q&A en ont besoin
+// pour leur propre contenu : les deux partaient en meme temps, donc aucune ne
+// pouvait servir de cache a l'autre et ces pages telechargeaient le fichier
+// deux fois.  Une seule promesse, consommee autant de fois qu'on veut. Chaque
+// consommateur attache son propre `.catch` : le bandeau tolere l'echec, une
+// page privee de ses chiffres non.
+const LATEST = fetch(bust("data/latest.json")).then(r => r.json());
+
 // LOCALE IS PINNED, not inherited.  A French browser renders 1.35300 as
 // "1,35300" and $108,996,447 as "108 996 447" -- correct locally, ambiguous to
 // everyone else, and a comma decimal separator on a price table turns a
@@ -70,6 +79,25 @@ const isPos = v => {
   return isFinite(n) && n > 0;
 };
 
+// UN GRAPHIQUE SANS NOM N'EXISTE PAS POUR UN LECTEUR D'ECRAN.  Un <svg> nu est
+// annonce comme « graphique », sans plus, et les huit de ce site le sont tous
+// de la meme facon -- autant de trous identiques dans la lecture de la page.
+//
+// `aria-labelledby` PLUTOT QU'`aria-label` : la legende est ecrite APRES le
+// trace (elle cite des chiffres que le trace vient de calculer), donc copier
+// son texte au moment du dessin capturerait une chaine vide. Pointer dessus
+// resout la lecture au moment ou l'utilisateur y arrive, pas avant. La
+// legende recoit un identifiant si elle n'en a pas.
+let _figN = 0;
+function nameChart(svg) {
+  const fig = svg.closest("figure");
+  const cap = fig && fig.querySelector("figcaption");
+  if (!cap) return;
+  if (!cap.id) cap.id = "figcap" + (++_figN);
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-labelledby", cap.id);
+}
+
 function table(node, rows, cols) {
   if (!rows.length) { node.innerHTML = "<tr><td>Nothing.</td></tr>"; return; }
   const klass = (c, v) => {
@@ -80,7 +108,8 @@ function table(node, rows, cols) {
     return k ? ` class="${k}"` : "";
   };
   node.innerHTML =
-    "<thead><tr>" + cols.map(c => `<th${klass(c)}>${c.label}</th>`).join("") + "</tr></thead>"
+    "<thead><tr>" + cols.map(c => `<th scope="col"${klass(c)}>${c.label}</th>`)
+                        .join("") + "</tr></thead>"
     + "<tbody>" + rows.map(r =>
         "<tr>" + cols.map(c => {
           const v = c.get(r);
@@ -101,7 +130,7 @@ const C = {
   // tick plein de spread a l'aller comme au retour, en plus des frais.
   // L'appeler commission invitait le reproche d'ignorer le slippage,
   // alors qu'il est dedans.
-  comm:   {label: "Trading cost $", get: r => fmtMoney(r.commission_USD)},
+  comm:   {label: "Trading cost $", get: r => fmtMoney(r.trading_cost_USD)},
   // "PnL $" read as the position's move for the session, which it is not: this
   // is proportional crystallisation.  A trade that adds to a position banks
   // nothing, one that cuts it by half banks half of the P&L accumulated so far,
@@ -274,6 +303,7 @@ function lineChart(id, days, vals, lo, hi, hSpec, fmt, fillDown, fmtExact,
 
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "none");
+  nameChart(svg);
   svg.innerHTML = g;
 
   // READING A VALUE OFF A 171-POINT LINE BY EYE IS GUESSWORK.  The axis gives
@@ -336,8 +366,9 @@ addEventListener("resize", () => {
 // THE BUILD STAMP LIVES IN THE NAV, on every page, and is filled here rather
 // than five times in five shapes. Before this it was a footer line on two
 // pages out of five, which meant three pages gave a reader no way to tell how
-// old what they were reading was. `bust` pins the URL to the build, so a page
-// that already fetched latest.json takes this from cache.
+// old what they were reading was. la charge utile vient de `LATEST`,
+// la promesse partagee en tete de fichier : ce bandeau ne declenche aucune
+// requete qui lui soit propre.
 // DEUX FAITS DISTINCTS. `Updated` dit quand les CHIFFRES ont bouge pour la
 // derniere fois ; `checked` dit quand le pipeline a tourne pour la derniere
 // fois, meme sans donnee nouvelle. Sans le second, un lundi sans seance fait
@@ -368,7 +399,7 @@ const fmtParis = t => {
        + p.hour + ":" + p.minute + ":" + p.second;
 };
 Promise.all([
-  fetch(bust("data/latest.json")).then(r => r.json()).catch(() => null),
+  LATEST.catch(() => null),
   // run.json N'ENTRE PAS dans le hachage qui fabrique `?v=` : un jour ou lui
   // seul bouge, l'empreinte est inchangee et le navigateur ressert sa copie
   // en cache -- l'heure de verification restait figee alors que le pipeline
@@ -487,6 +518,7 @@ function multiLine(id, dates, series, keyId, capId, capFn, fmtV, fitData, logY) 
   g += `<g class="hv"></g>`;
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("preserveAspectRatio", "none");
+  nameChart(svg);
   svg.style.height = H + "px";
   svg.innerHTML = g;
 

@@ -255,3 +255,46 @@ svg .hv-line{stroke:var(--ink);stroke-width:.8;stroke-dasharray:2 2}
 svg .hv-dot{fill:var(--ink)}
 svg .hv-text{fill:var(--ink);stroke:var(--page);stroke-width:3;
              paint-order:stroke;font-size:11px}
+
+
+/* ---------------------------------------------------------------- clavier --
+   IL N'Y AVAIT AUCUNE REGLE :focus.  Le site remplace le contour par defaut du
+   navigateur sur rien du tout, mais il n'en definissait pas non plus, et sur
+   les fonds clairs de la palette le contour natif se voyait a peine : qui
+   navigue au clavier tabulait a l'aveugle a travers la nav, les liens de
+   seance et le bouton de theme.
+   `:focus-visible` PLUTOT QUE `:focus` : le second decore aussi le clic a la
+   souris, ce qui laisse un cadre derriere chaque bouton presse et pousse tout
+   le monde a le supprimer -- c'est ainsi qu'on perd l'accessibilite en croyant
+   nettoyer. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;
+               border-radius:1px}
+
+/* ----------------------------------------------------------------- papier --
+   UNE PAGE IMPRIMEE N'A NI ONGLET NI THEME.  On imprime en noir sur blanc
+   quelle que soit la preference a l'ecran -- l'encre claire du theme sombre
+   sort illisible -- et on retire ce qui ne s'actionne pas sur du papier.
+   L'ADRESSE DES LIENS EST IMPRIMEE APRES LE LIEN : un renvoi souligne dont la
+   cible est invisible ne renvoie nulle part une fois sorti. Seuls les liens
+   externes la portent ; annoter les ancres internes noierait le texte.
+
+   CHAQUE SELECTEUR EST PREFIXE PAR :root, ET CE N'EST PAS DU BRUIT.  Cette
+   feuille est chargee AVANT le <style> de chaque page, donc a specificite
+   egale c'est la page qui gagne -- `nav{display:none}` ici perdait contre le
+   `nav{display:flex}` de l'accueil et la barre de navigation s'imprimait.
+   `:root` ajoute juste ce qu'il faut de poids pour que la regle papier passe
+   devant, sans recourir a !important qui ne laisserait plus rien annuler. */
+@media print{
+  :root{--page:#fff;--panel:#f4f4f4;--ink:#000;--muted:#333;--faint:#666;
+        --accent:#000;--rule:#bbb;--rule-strong:#000;--rule-faint:#ddd;
+        --neg:#000;--pos:#000}
+  :root nav,:root .theme,:root .dl{display:none}
+  :root body{padding:0;max-width:none;font-size:11pt;background:#fff;color:#000}
+  :root a{color:#000;text-decoration:none}
+  :root a[href^="http"]::after{content:" (" attr(href) ")";font-size:8.5pt;
+                               color:#444;word-break:break-all}
+  :root h2,:root h3{break-after:avoid}
+  :root figure,:root tr{break-inside:avoid}
+  :root thead{display:table-header-group}  /* l'en-tete se repete par page */
+  :root .scroll{overflow:visible}          /* rien ne defile sur du papier */
+}

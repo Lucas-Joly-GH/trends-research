@@ -29,7 +29,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=55dfc9fe">
+<link rel="stylesheet" href="site.css?v=985d9db2">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -88,8 +88,8 @@
    The quantity and both prices are on the
    <a href="journal.html">Journal</a> page, the point value is here, and the FX
    rate is the contract&rsquo;s currency against the dollar on that date.
-   Commission on one side of a trade is half the round-trip cost, converted at
-   the same rate.</p>
+   Trading cost on one side of a trade is half the round-trip cost, converted
+   at the same rate.</p>
 
 <h2 id="head">Contracts</h2>
 <div class="scroll"><table class="data num" id="map"></table></div>
@@ -114,7 +114,7 @@
   </div>
 </footer>
 
-<script src="app.js?v=55dfc9fe"></script>
+<script src="app.js?v=985d9db2"></script>
 <script>
 const NUM = v => v == null ? "—" : v.toLocaleString(L, {maximumFractionDigits: 8});
 
@@ -127,9 +127,9 @@ fetch(bust("data/mapping.json")).then(r=>r.json()).then(j=>{
     + `${new Set(rows.map(r=>r.currency)).size} currencies.`;
 
   let html = "<thead><tr>"
-    + `<th class="l">Instrument</th><th class="l">Description</th>`
-    + `<th class="l">Exchange</th><th class="l">Currency</th>`
-    + `<th>Point value</th><th>Tick size</th><th>Round-trip cost</th>`
+    + `<th scope="col" class="l">Instrument</th><th scope="col" class="l">Description</th>`
+    + `<th scope="col" class="l">Exchange</th><th scope="col" class="l">Currency</th>`
+    + `<th scope="col">Point value</th><th scope="col">Tick size</th><th scope="col">Round-trip cost</th>`
     + "</tr></thead><tbody>";
   for (const c of classes) {
     const group = rows.filter(r=>r.asset_class===c)

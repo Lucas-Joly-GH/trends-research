@@ -18,7 +18,7 @@
   "interest_ann": 0.036458,
   "n_positions": 60,
   "updated_at": "2026-09-01T09:44:18+00:00",
-  "generated_at": "2026-09-01T13:19:53+00:00"
+  "generated_at": "2026-09-01T13:32:42+00:00"
  },
  "executed": [
   {
@@ -29,7 +29,7 @@
    "kind": "RESIZE",
    "fill_open": 1.3534,
    "decision_close": 1.353,
-   "commission_USD": 208.125,
+   "trading_cost_USD": 208.125,
    "realised_pnl_USD": 0.0
   },
   {
@@ -40,7 +40,7 @@
    "kind": "RESIZE",
    "fill_open": 0.7195,
    "decision_close": 0.71955,
-   "commission_USD": 180.0,
+   "trading_cost_USD": 180.0,
    "realised_pnl_USD": -17727.666962916323
   },
   {
@@ -51,7 +51,7 @@
    "kind": "RESIZE",
    "fill_open": 0.05859,
    "decision_close": 0.0586,
-   "commission_USD": 260.0,
+   "trading_cost_USD": 260.0,
    "realised_pnl_USD": 40922.50103845057
   },
   {
@@ -62,7 +62,7 @@
    "kind": "RESIZE",
    "fill_open": 6555.0,
    "decision_close": 6648.0,
-   "commission_USD": 22.5,
+   "trading_cost_USD": 22.5,
    "realised_pnl_USD": -27872.4
   },
   {
@@ -73,7 +73,7 @@
    "kind": "RESIZE",
    "fill_open": 117.42,
    "decision_close": 117.43,
-   "commission_USD": 67.2207394990225,
+   "trading_cost_USD": 67.2207394990225,
    "realised_pnl_USD": -1508.471561649535
   },
   {
@@ -84,7 +84,7 @@
    "kind": "RESIZE",
    "fill_open": 7723.5,
    "decision_close": 7722.0,
-   "commission_USD": 8.75,
+   "trading_cost_USD": 8.75,
    "realised_pnl_USD": 0.0
   },
   {
@@ -95,7 +95,7 @@
    "kind": "RESIZE",
    "fill_open": 6470.0,
    "decision_close": 6490.0,
-   "commission_USD": 60.794247674461985,
+   "trading_cost_USD": 60.794247674461985,
    "realised_pnl_USD": -738.453887790492
   },
   {
@@ -106,7 +106,7 @@
    "kind": "RESIZE",
    "fill_open": 123.55,
    "decision_close": 123.52,
-   "commission_USD": 78.16403272430827,
+   "trading_cost_USD": 78.16403272430827,
    "realised_pnl_USD": 0.0
   },
   {
@@ -117,7 +117,7 @@
    "kind": "RESIZE",
    "fill_open": 113.42,
    "decision_close": 113.4,
-   "commission_USD": 269.23166827261736,
+   "trading_cost_USD": 269.23166827261736,
    "realised_pnl_USD": 0.0
   },
   {
@@ -128,7 +128,7 @@
    "kind": "RESIZE",
    "fill_open": 4483.2,
    "decision_close": 4529.9,
-   "commission_USD": 37.5,
+   "trading_cost_USD": 37.5,
    "realised_pnl_USD": -143770.37037037048
   },
   {
@@ -139,7 +139,7 @@
    "kind": "RESIZE",
    "fill_open": 211.8,
    "decision_close": 211.725,
-   "commission_USD": 25.0,
+   "trading_cost_USD": 25.0,
    "realised_pnl_USD": 0.0
   },
   {
@@ -150,7 +150,7 @@
    "kind": "RESIZE",
    "fill_open": 65630.0,
    "decision_close": 65780.0,
-   "commission_USD": 112.3763243046112,
+   "trading_cost_USD": 112.3763243046112,
    "realised_pnl_USD": 0.0
   },
   {
@@ -161,7 +161,7 @@
    "kind": "CLOSE",
    "fill_open": 1446.0,
    "decision_close": 1446.9,
-   "commission_USD": 175.0,
+   "trading_cost_USD": 175.0,
    "realised_pnl_USD": -103000.0
   },
   {
@@ -172,7 +172,7 @@
    "kind": "RESIZE",
    "fill_open": 3.0613,
    "decision_close": 3.0502,
-   "commission_USD": 13.799999999999999,
+   "trading_cost_USD": 13.799999999999999,
    "realised_pnl_USD": 0.0
   },
   {
@@ -183,7 +183,7 @@
    "kind": "RESIZE",
    "fill_open": 109.125,
    "decision_close": 109.2188,
-   "commission_USD": 181.25,
+   "trading_cost_USD": 181.25,
    "realised_pnl_USD": 0.0
   },
   {
@@ -194,7 +194,7 @@
    "kind": "CLOSE",
    "fill_open": 536.0,
    "decision_close": 536.5,
-   "commission_USD": 78.75,
+   "trading_cost_USD": 78.75,
    "realised_pnl_USD": -26579.009633405578
   },
   {
@@ -205,7 +205,7 @@
    "kind": "RESIZE",
    "fill_open": 105.75,
    "decision_close": 105.8047,
-   "commission_USD": 243.39000000000001,
+   "trading_cost_USD": 243.39000000000001,
    "realised_pnl_USD": 0.0
   },
   {
@@ -216,7 +216,7 @@
    "kind": "CLOSE",
    "fill_open": 71.24,
    "decision_close": 71.06,
-   "commission_USD": 16.5,
+   "trading_cost_USD": 16.5,
    "realised_pnl_USD": -7351.473214285707
   },
   {
@@ -227,7 +227,7 @@
    "kind": "RESIZE",
    "fill_open": 348.5,
    "decision_close": 348.9,
-   "commission_USD": 157.5,
+   "trading_cost_USD": 157.5,
    "realised_pnl_USD": 0.0
   },
   {
@@ -238,7 +238,7 @@
    "kind": "RESIZE",
    "fill_open": 107.8281,
    "decision_close": 107.875,
-   "commission_USD": 526.0649999999999,
+   "trading_cost_USD": 526.0649999999999,
    "realised_pnl_USD": 0.0
   },
   {
@@ -249,7 +249,7 @@
    "kind": "RESIZE",
    "fill_open": 784.0,
    "decision_close": 784.0,
-   "commission_USD": 61.25,
+   "trading_cost_USD": 61.25,
    "realised_pnl_USD": -32112.30098238482
   }
  ],

@@ -29,7 +29,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=55dfc9fe">
+<link rel="stylesheet" href="site.css?v=985d9db2">
 <style>
   /* Plain: white ground, black text, browser default face, no colour.
      Rules and alignment do the work. */
@@ -229,9 +229,9 @@
   </div>
 </footer>
 
-<script src="app.js?v=55dfc9fe"></script>
+<script src="app.js?v=985d9db2"></script>
 <script>
-fetch(bust("data/latest.json")).then(r=>r.json()).then(d=>{
+LATEST.then(d=>{
   const m = d.meta;
   el("asof").textContent =
     `As of ${m.as_of}, ${m.sessions} sessions since ${m.window_start}.`;
@@ -402,20 +402,16 @@ fetch(bust("data/history.json")).then(r=>r.json()).then(h=>{
   // rows, and materialising a string nobody asked for on every visit is the
   // kind of cost that is invisible until the series is ten years long.
   //
-  // THE FIELDS ARE THE PUBLISHED ONES, in the published order, so a reader can
-  // line the file up against data/history.json field by field. The one rename
-  // is `commission_USD` -> `trading_cost_USD`: the number carries a full tick
-  // of spread each way as well as fees, and a column header is exactly where
-  // that gets misread as brokerage.
-  const CSVCOLS = [["date", "date"], ["equity_USD", "equity_USD"],
-                   ["drawdown", "drawdown"], ["gross_pnl_USD", "gross_pnl_USD"],
-                   ["trading_cost_USD", "commission_USD"],
-                   ["interest_USD", "interest_USD"]];
+  // THE FIELDS ARE THE PUBLISHED ONES, under the published names and in the
+  // published order, so a reader can line the file up against
+  // data/history.json field by field with nothing to translate.
+  const CSVCOLS = ["date", "equity_USD", "drawdown", "gross_pnl_USD",
+                   "trading_cost_USD", "interest_USD"];
   el("csvnote").textContent = d.length + " sessions to " + d[d.length-1].date
                               + ".";
   el("csv").addEventListener("click", () => {
-    const rows = [CSVCOLS.map(c => c[0]).join(",")];
-    for (const r of d) rows.push(CSVCOLS.map(c => r[c[1]]).join(","));
+    const rows = [CSVCOLS.join(",")];
+    for (const r of d) rows.push(CSVCOLS.map(c => r[c]).join(","));
     // CRLF and a BOM: this file is opened in Excel more often than in pandas,
     // and without the BOM Excel reads UTF-8 as the local codepage.
     const blob = new Blob([("\ufeff") + rows.join("\r\n") + "\r\n"],

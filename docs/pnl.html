@@ -29,7 +29,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=55dfc9fe">
+<link rel="stylesheet" href="site.css?v=985d9db2">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -82,7 +82,7 @@
     white-space:normal;vertical-align:bottom}
   table.data th.l,table.data td.l{text-align:left}
   .num{font-variant-numeric:tabular-nums}
-  /* Three blocks, three weights: the instruments are the detail, commission and
+  /* Three blocks, three weights: the instruments are the detail, trading cost and
      interest are the two adjustments that are NOT trading, and the totals are
      what the reader came for. */
   tbody.adj tr:first-child td{border-top:1px solid var(--rule-strong);padding-top:6px}
@@ -140,7 +140,7 @@
 <footer>
   <div class="foot">
    <div class="fcol">
-<p>Gross P&amp;L is before commission and before interest. The instrument rows sum to Total Gross P&amp;L by construction: the
+<p>Gross P&amp;L is before trading cost and before interest. The instrument rows sum to Total Gross P&amp;L by construction: the
      publisher refuses to write a session where they do not. Figures are rounded
      to the cent, so a total can sit a cent or two off the sum of the lines above
      it; the underlying series agree to 7e-10.</p>
@@ -157,7 +157,7 @@
   </div>
 </footer>
 
-<script src="app.js?v=55dfc9fe"></script>
+<script src="app.js?v=985d9db2"></script>
 <script>
 let DAYS = [], current = null;
 
@@ -167,7 +167,7 @@ let DAYS = [], current = null;
 // cannot afford.  At the cent everything ties: across all 171 sessions the worst
 // residue is $0.03 on the instrument column and $0.02 on the walk, against $5
 // and a clean $1 break at whole dollars.
-// A ZERO HAS NO SIGN.  `Total Commissions` is rendered as `-comm`, so a
+// A ZERO HAS NO SIGN.  `Total trading cost` is rendered as `-comm`, so a
 // session that traded nothing negated 0 and printed "-0.00", which reads as a
 // rounding artefact or a bug rather than as "nothing was charged".
 const money = v => (Math.abs(v) < 0.005 ? 0 : v)
@@ -192,7 +192,7 @@ function show(date){
     tr.classList.toggle("on", tr.dataset.d === date));
   fetch(bust(`data/pnl/${date}.json`)).then(r=>r.json()).then(d=>{
     const b = d.book;
-    const gross = b.gross_pnl_USD, comm = b.commission_USD, itr = b.interest_USD;
+    const gross = b.gross_pnl_USD, comm = b.trading_cost_USD, itr = b.interest_USD;
     const net = gross - comm;
 
     // THE COUNT MEANS MARKETS THAT TRADED, not rows.  A holiday leaves the
@@ -213,15 +213,15 @@ function show(date){
       + `instrument${moved.length === 1 ? "" : "s"} moved the book`
       + (quiet ? `, ${quiet} flat or shut and not listed` : "");
 
-    // Commission is shown NEGATIVE.  It is a deduction, and a balance sheet
+    // Trading cost is shown NEGATIVE.  It is a deduction, and a balance sheet
     // whose column does not visibly add up invites the reader to check the
     // arithmetic and conclude we got it wrong.
     el("sheet").innerHTML =
-      `<thead><tr><th class="l">Instrument</th><th>Gross P&amp;L $</th></tr></thead>`
+      `<thead><tr><th scope="col" class="l">Instrument</th><th scope="col">Gross P&amp;L $</th></tr></thead>`
       + "<tbody>"
       + moved.map(r => row(r.instrument, r.gross_pnl_USD)).join("")
       + `</tbody><tbody class="adj">`
-      + row("Total Commissions", -comm, true)
+      + row("Total trading cost", -comm, true)
       + row("Interests", itr, true)
       + `</tbody><tbody class="tot">`
       + row("Total Gross P&amp;L", gross, true)
@@ -232,7 +232,7 @@ function show(date){
     el("walk").innerHTML = "<tbody>"
       + row("Opening equity", b.opening_equity_USD, true, true)
       + row("+ Gross P&amp;L", gross, true)
-      + row("− Commissions", -comm, true)
+      + row("− Trading cost", -comm, true)
       + row("+ Interest", itr, true)
       + `</tbody><tbody class="tot">`
       + row("= Closing equity", b.closing_equity_USD, true, true)
@@ -243,10 +243,12 @@ function show(date){
       + "this session.";
 
     el("notes").innerHTML =
-      `<p class="note"><b>About commissions.</b> Commissions are the product of
-       the day+1 execution: orders decided on the previous close and filled at
-       this session&rsquo;s open. They have nothing to do with this
-       session&rsquo;s trading performance, which is the gross block.</p>`
+      `<p class="note"><b>About the trading cost.</b> It is one full tick of spread
+       each way plus a fee floor, not brokerage alone; the
+       <a href="mapping.html">Mapping</a> page builds it per contract. It is
+       the product of the day+1 execution: orders decided on the previous close
+       and filled at this session&rsquo;s open. So it has nothing to do with
+       this session&rsquo;s trading performance, which is the gross block.</p>`
       + `<p class="note"><b>About the interest.</b> We operate on an overnight
        principle, so the interest received on day n depends on the NAV of day
        n−1. The balance that earned here was $${money(b.interest_base_USD)},

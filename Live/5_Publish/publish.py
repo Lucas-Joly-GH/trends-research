@@ -47,7 +47,7 @@ _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
 BACKTEST_START = "1990-01-02"
 
 EXECUTED_COLS = ["instrument", "contract", "action", "quantity", "kind",
-                 "fill_open", "decision_close", "commission_USD",
+                 "fill_open", "decision_close", "trading_cost_USD",
                  "realised_pnl_USD"]
 GIVEN_COLS = ["instrument", "contract", "action", "quantity", "kind",
               "decision_close"]
@@ -57,11 +57,16 @@ PENDING_COLS = ["instrument", "contract", "action", "quantity", "kind",
 OUTSTANDING_COLS = ["instrument", "contract", "action", "quantity",
                     "carried_sessions", "reason"]
 DAILY_COLS = ["date", "equity_USD", "drawdown", "gross_pnl_USD",
-              "commission_USD", "interest_USD"]
+              "trading_cost_USD", "interest_USD"]
 PNL_COLS = ["instrument", "gross_pnl_USD", "session", "held"]
-BOOK_COLS = ["opening_equity_USD", "gross_pnl_USD", "commission_USD",
+BOOK_COLS = ["opening_equity_USD", "gross_pnl_USD", "trading_cost_USD",
              "interest_USD", "closing_equity_USD", "interest_base_USD",
              "interest_from_date", "calendar_days", "rate_annual_pct"]
+# BOOK_COLS nomme les champs PUBLIES et sert aussi de projection sur la
+# ligne du livre de comptes, dont les colonnes portent le vocabulaire du
+# moteur. Les deux coincident partout sauf ici, seul point de contact
+# des deux nommages (cf. la note sur FORBIDDEN).
+BOOK_SOURCE = {"trading_cost_USD": "commission_USD"}
 PNL_INDEX_COLS = ["date", "gross_pnl_USD", "net_total_USD"]
 MAPPING_COLS = ["instrument", "description", "asset_class", "pointsize",
                 "currency", "exchange", "cost_rt_local", "tick_size"]
@@ -104,6 +109,13 @@ QA_KEYS = ["as_of", "bench", "bench_name", "n", "corr", "corr_lo", "corr_hi",
            "key", "name", "total", "vol", "sharpe", "max_dd",
            "book", "bh", "spx", "vol_ratio", "scaled_total", "scaled_dd"]
 
+# LE NOM DU MOTEUR N'EST PAS LE NOM PUBLIE.  Le livre de comptes appelle
+# cette colonne `commission_USD` depuis l'origine et les parquets sur
+# disque la portent ainsi : la renommer la-bas serait une migration de
+# donnees, pas un choix de mot.  Mais le nombre contient un tick plein de
+# spread a l'aller comme au retour en plus des frais, et « commission »
+# dans un en-tete de colonne se lit comme du courtage seul.  La traduction
+# se fait donc ICI, a la frontiere de publication, et nulle part ailleurs.
 FORBIDDEN = ["norgate"]
 # L'adresse publique, en dur : og:image et og:url doivent etre absolues
 # (un scraper ne resout pas les chemins relatifs) et rien dans le depot
@@ -346,7 +358,7 @@ def build() -> tuple[dict, dict, list, dict]:
             "kind": r["kind"],
             "fill_open": _f(opens[inst].get(r["execute_at"])),
             "decision_close": _f(r["decision_close"]),
-            "commission_USD": _f(r["commission_USD"]),
+            "trading_cost_USD": _f(r["commission_USD"]),
             "realised_pnl_USD": _f(r["realised_pnl_USD"])})
     _guard("executed", ex_rows, EXECUTED_COLS)
 
@@ -372,7 +384,7 @@ def build() -> tuple[dict, dict, list, dict]:
     daily = [{"date": d[k], "equity_USD": round(float(eq[k]), 2),
               "drawdown": round(float(dd[k]), 6),
               "gross_pnl_USD": round(float(gpnl[k]), 2),
-              "commission_USD": round(float(cost[k]), 2),
+              "trading_cost_USD": round(float(cost[k]), 2),
               "interest_USD": round(float(ist[k]), 2)}
              for k in range(len(d))]
     _guard("daily", daily, DAILY_COLS)
@@ -444,7 +456,7 @@ def build_days(tb, led, opens: dict) -> tuple[list[dict], dict]:
                    "action": r["action"], "quantity": _f(r["quantity"]),
                    "kind": r["kind"], "fill_open": _open(r["instrument"], d),
                    "decision_close": _f(r["decision_close"]),
-                   "commission_USD": _f(r["commission_USD"]),
+                   "trading_cost_USD": _f(r["commission_USD"]),
                    "realised_pnl_USD": _f(r["realised_pnl_USD"])}
                   for r in exe.get(d, [])]
         # Les ordres restes en carnet CE JOUR-LA. Le journal en tient un
@@ -1280,8 +1292,10 @@ def build_pnl() -> tuple[list[dict], dict]:
             raise SystemExit(
                 f"[ABORT] {d}: instruments sum to {tot:,.2f} but the statement "
                 f"says {r['gross_pnl_USD']:,.2f}. Nothing was written.")
-        book = {k: (r[k] if k in ("interest_from_date", "calendar_days")
-                    else _f(r[k])) for k in BOOK_COLS}
+        def _src(k):
+            return BOOK_SOURCE.get(k, k)
+        book = {k: (r[_src(k)] if k in ("interest_from_date", "calendar_days")
+                    else _f(r[_src(k)])) for k in BOOK_COLS}
         _guard(f"pnl {d}", rows, PNL_COLS)
         _guard(f"book {d}", [book], BOOK_COLS)
         days[d] = {"date": d, "instruments": rows, "book": book}

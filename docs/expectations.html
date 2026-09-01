@@ -29,7 +29,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=55dfc9fe">
+<link rel="stylesheet" href="site.css?v=985d9db2">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -164,7 +164,7 @@ Historical sorts the realised returns.</p>
 <h3 id="episodes">The six deepest, dated</h3>
 <div class="scroll"><table class="data num" id="ddep"></table></div>
 
-<script src="app.js?v=55dfc9fe"></script>
+<script src="app.js?v=985d9db2"></script>
 <script>
 fetch(bust("data/expectations.json")).then(r => r.json()).then(j => {
 
@@ -341,8 +341,8 @@ el("qqkey").innerHTML = '<i class="sw-lv"></i>live quantile (vertical) against '
 const mrow = (lab, a, b, c) => '<tr><td class="l">' + lab + '</td><td class="num">'
   + a + '</td><td class="num">' + b + '</td><td class="num">' + c + "</td></tr>";
 el("moments").innerHTML =
-  '<thead><tr><th class="l">Daily returns</th><th>Backtest</th><th>Live</th>'
-  + "<th>95% interval on the live estimate</th></tr></thead><tbody>"
+  '<thead><tr><th scope="col" class="l">Daily returns</th><th scope="col">Backtest</th><th scope="col">Live</th>'
+  + "<th scope='col'>95% interval on the live estimate</th></tr></thead><tbody>"
   + mrow("Mean, annualised", P2(bt.mean * 256), P2(lv.mean * 256),
          "± " + P2(1.96 * lv.sd * ANN / Math.sqrt(lv.n)))
   + mrow("Median session", P2(bt.median), P2(lv.median), "—")
@@ -415,10 +415,10 @@ const hrow = r => '<td class="num">' + r.n.toLocaleString(L) + '</td><td class="
   + P0(r.up) + '</td><td class="num">' + P2(r.min) + '</td><td class="num">'
   + P2(r.max) + "</td>";
 el("horizons").innerHTML =
-  '<thead><tr><th class="l">Horizon</th><th>Periods</th><th>Mean</th>'
-  + "<th>Median</th>"
-  + "<th>Std dev</th><th>Skew</th><th>Excess kurtosis</th><th>% up</th>"
-  + "<th>Worst</th><th>Best</th></tr></thead><tbody>"
+  '<thead><tr><th scope="col" class="l">Horizon</th><th scope="col">Periods</th><th scope="col">Mean</th>'
+  + "<th scope='col'>Median</th>"
+  + "<th scope='col'>Std dev</th><th scope='col'>Skew</th><th scope='col'>Excess kurtosis</th><th scope='col'>% up</th>"
+  + "<th scope='col'>Worst</th><th scope='col'>Best</th></tr></thead><tbody>"
   + '<tr class="cls"><td colspan="10">Backtest</td></tr>'
   + j.moments.map(r => "<tr" + (r.skew > 0 ? ' class="hl"' : "")
       + '><td class="l">' + cap(r.horizon) + "</td>" + hrow(r) + "</tr>").join("")
@@ -493,11 +493,11 @@ el("sweepvkey").innerHTML = '<i class="sw-n"></i>normal<i class="sw-cf"></i>'
 el("sweepckey").innerHTML = '<i class="sw-n"></i>normal<i class="sw-h"></i>historical';
 
 el("vartable").innerHTML =
-  '<thead><tr><th class="l">Confidence</th><th>VaR, normal</th>'
-  + "<th>VaR, Cornish&ndash;Fisher</th><th>VaR, historical</th>"
-  + "<th>CVaR, normal</th><th>CVaR, historical</th>"
-  + "<th>CVaR/VaR, normal</th><th>CVaR/VaR, historical</th>"
-  + "<th>Normal understates CVaR by</th></tr></thead><tbody>"
+  '<thead><tr><th scope="col" class="l">Confidence</th><th scope="col">VaR, normal</th>'
+  + "<th scope='col'>VaR, Cornish&ndash;Fisher</th><th scope='col'>VaR, historical</th>"
+  + "<th scope='col'>CVaR, normal</th><th scope='col'>CVaR, historical</th>"
+  + "<th scope='col'>CVaR/VaR, normal</th><th scope='col'>CVaR/VaR, historical</th>"
+  + "<th scope='col'>Normal understates CVaR by</th></tr></thead><tbody>"
   + j.var.map(r => '<tr><td class="l">' + P1(r.level) + '</td><td class="num">'
       + P2(r.normal) + '</td><td class="num">' + P2(r.cf) + '</td><td class="num">'
       + P2(r.hist) + '</td><td class="num">' + P2(r.normal_cvar)
@@ -546,9 +546,9 @@ el("tlkey").innerHTML = '<i class="sw-pos"></i>up<i class="sw-neg"></i>down'
   + '<i class="sw-var"></i>thresholds from the backtest';
 
 el("breachtable").innerHTML =
-  '<thead><tr><th class="l">Confidence</th><th>Threshold from the backtest</th>'
-  + "<th>Breaches expected</th><th>Breaches observed</th>"
-  + "<th>Kupiec statistic</th><th>Rejected at 5%</th></tr></thead><tbody>"
+  '<thead><tr><th scope="col" class="l">Confidence</th><th scope="col">Threshold from the backtest</th>'
+  + "<th scope='col'>Breaches expected</th><th scope='col'>Breaches observed</th>"
+  + "<th scope='col'>Kupiec statistic</th><th scope='col'>Rejected at 5%</th></tr></thead><tbody>"
   + j.breaches.map(r => "<tr" + (r.reject_5pct ? ' class="hl"' : "")
       + '><td class="l">' + P1(r.level) + '</td><td class="num">'
       + P2(r.threshold) + '</td><td class="num">' + r.expected.toFixed(1)
@@ -565,7 +565,7 @@ histBars("ddhist", j.dd_hist, {W: 1120, H: 240, cls: "bar-neg",
 
 const q = j.dd_quantiles;
 el("dd").innerHTML =
-  '<thead><tr><th class="l">Drawdown</th><th>Backtest</th></tr></thead><tbody>'
+  '<thead><tr><th scope="col" class="l">Drawdown</th><th scope="col">Backtest</th></tr></thead><tbody>'
   + [["Median session", q[0]], ["10th percentile", q[1]],
      ["1st percentile", q[2]], ["Worst", q[3]]]
       .map(r => '<tr><td class="l">' + r[0] + '</td><td class="num">' + P2(r[1])
@@ -582,9 +582,9 @@ el("dd").innerHTML =
 // rather than a blank -- the blank reads as missing data, and this one is the
 // row that matters most to anyone reading the page today.
 el("ddep").innerHTML =
-  '<thead><tr><th class="l">Peak</th><th class="l">Trough</th>'
-  + '<th class="l">Recovered</th><th>Depth</th><th>Sessions down</th>'
-  + '<th>To recover</th></tr></thead><tbody>'
+  '<thead><tr><th scope="col" class="l">Peak</th><th scope="col" class="l">Trough</th>'
+  + '<th scope="col" class="l">Recovered</th><th scope="col">Depth</th><th scope="col">Sessions down</th>'
+  + '<th scope="col">To recover</th></tr></thead><tbody>'
   + (j.dd_episodes || []).map(r =>
       '<tr' + (r.ongoing ? ' class="hl"' : '') + '>'
       + '<td class="l">' + r.peak + "</td>"
@@ -628,12 +628,12 @@ el("ddep").innerHTML =
     + `<td>${r.sharpe.toFixed(2)}</td>`
     + `<td>${(r.max_dd * 100).toFixed(1)}%</td></tr>`;
   el("hbenchtable").innerHTML =
-    `<thead><tr><th class="l"></th><th>Total return</th><th>Volatility</th>`
-    + `<th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l"></th><th scope="col">Total return</th><th scope="col">Volatility</th>`
+    + `<th scope="col">Sharpe</th><th scope="col">Max drawdown</th></tr></thead><tbody>`
     + j.hist_bench_stats.map(r => benchRow(r, false)).join("") + "</tbody>";
   el("hbenchvntable").innerHTML =
-    `<thead><tr><th class="l"></th><th>Leverage</th><th>Total return</th>`
-    + `<th>Volatility</th><th>Sharpe</th><th>Max drawdown</th></tr></thead>`
+    `<thead><tr><th scope="col" class="l"></th><th scope="col">Leverage</th><th scope="col">Total return</th>`
+    + `<th scope="col">Volatility</th><th scope="col">Sharpe</th><th scope="col">Max drawdown</th></tr></thead>`
     + `<tbody>`
     + j.hist_bench_vn_stats.map(r => benchRow(r, true)).join("") + "</tbody>";
 }).catch(e => {

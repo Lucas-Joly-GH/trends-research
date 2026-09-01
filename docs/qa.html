@@ -29,7 +29,7 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="site.css?v=55dfc9fe">
+<link rel="stylesheet" href="site.css?v=985d9db2">
 <style>
   body{background:var(--page);color:var(--ink);margin:0 auto;padding:28px 22px 70px;
        max-width:min(1560px, 95vw);line-height:1.5}
@@ -209,15 +209,15 @@ this page and I&rsquo;d be pleased to answer you.</p>
        many times equity is ordinary for the asset class; it is reported here
        because it is the number a reader cannot otherwise get, not because it
        is a leverage ratio in the lending sense.</p>
-    <p>Attribution is gross of commission and shows where the P&amp;L was
-       earned, not what each market contributed after cost. Commission is a
+    <p>Attribution is gross of trading cost and shows where the P&amp;L was
+       earned, not what each market contributed after cost. Trading cost is a
        portfolio-level figure on the
        <a href="pnl.html">Daily P&amp;L</a> page.</p>
    </div>
   </div>
 </footer>
 
-<script src="app.js?v=55dfc9fe"></script>
+<script src="app.js?v=985d9db2"></script>
 <script>
 const NUM = v => v == null ? "—" : v.toLocaleString(L, {maximumFractionDigits: 0});
 const SIGN = v => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "%";
@@ -236,7 +236,7 @@ function card(k, v, s, colour) {
 let QA = null;
 
 Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
-             fetch(bust("data/latest.json")).then(r => r.json())])
+             LATEST])
        .then(([j, latest]) => {
   const META = latest.meta;
   QA = j;
@@ -268,7 +268,7 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
   const me = w.reduce((a, r) => a + r.bench_ret, 0) / w.length;
   const up = w.filter(r => r.book_ret > 0).length;
   el("worst").innerHTML =
-    `<thead><tr><th class="l">Session</th><th>${j.bench}</th><th>Book</th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l">Session</th><th scope="col">${j.bench}</th><th scope="col">Book</th></tr></thead><tbody>`
     + w.map(r => `<tr><td class="l">${r.date}</td>`
         + `<td class="${cls2(r.bench_ret)}">${SIGN(r.bench_ret * 100)}</td>`
         + `<td class="${cls2(r.book_ret)}">${SIGN(r.book_ret * 100)}</td></tr>`).join("")
@@ -300,8 +300,8 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
   el("attrib")._cap = cap;
   el("attribcap").textContent = cap;
   el("attribtable").innerHTML =
-    `<thead><tr><th class="l">Asset class</th><th>Gross P&amp;L $</th>`
-    + `<th>Share of gross movement</th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l">Asset class</th><th scope="col">Gross P&amp;L $</th>`
+    + `<th scope="col">Share of gross movement</th></tr></thead><tbody>`
     + j.attribution.map(r => `<tr><td class="l">${r.asset_class}</td>`
         + `<td class="${cls2(r.gross_pnl_USD)}">${NUM(r.gross_pnl_USD)}</td>`
         + `<td>${(Math.abs(r.share) * 100).toFixed(1)}%</td></tr>`).join("")
@@ -329,8 +329,8 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
   el("bench")._cap = `$100m in each, ${bdates[0]} to ${bdates[bdates.length - 1]}.`;
   el("benchcap").textContent = el("bench")._cap;
   el("benchtable").innerHTML =
-    `<thead><tr><th class="l"></th><th>Total return</th><th>Volatility</th>`
-    + `<th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l"></th><th scope="col">Total return</th><th scope="col">Volatility</th>`
+    + `<th scope="col">Sharpe</th><th scope="col">Max drawdown</th></tr></thead><tbody>`
     + j.bench_stats.map(r => `<tr><td class="l">${r.name}</td>`
         + `<td class="${cls2(r.total)}">${(r.total * 100).toFixed(2)}%</td>`
         + `<td>${(r.vol * 100).toFixed(2)}%</td>`
@@ -357,8 +357,8 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
     + `% volatility, ${vdates[0]} to ${vdates[vdates.length - 1]}.`;
   el("benchvncap").textContent = el("benchvn")._cap;
   el("benchvntable").innerHTML =
-    `<thead><tr><th class="l"></th><th>Leverage</th><th>Total return</th>`
-    + `<th>Volatility</th><th>Sharpe</th><th>Max drawdown</th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l"></th><th scope="col">Leverage</th><th scope="col">Total return</th>`
+    + `<th scope="col">Volatility</th><th scope="col">Sharpe</th><th scope="col">Max drawdown</th></tr></thead><tbody>`
     + j.bench_vn_stats.map(r => `<tr><td class="l">${r.name}</td>`
         + `<td>${r.k.toFixed(2)}×</td>`
         + `<td class="${cls2(r.total)}">${(r.total * 100).toFixed(2)}%</td>`
@@ -393,9 +393,9 @@ Promise.all([fetch(bust("data/qa.json")).then(r => r.json()),
     + `${V[0].date} to ${V[V.length - 1].date}.`;
   const groups = [...new Set(j.positions.map(p => p.asset_class))]
     .sort((a, b) => a.localeCompare(b));
-  let html = `<thead><tr><th class="l">Instrument</th><th class="l">Class</th>`
-    + `<th class="l">Side</th><th>Contracts</th><th>Notional $</th>`
-    + `<th>Share of gross</th></tr></thead><tbody>`;
+  let html = `<thead><tr><th scope="col" class="l">Instrument</th><th scope="col" class="l">Class</th>`
+    + `<th scope="col" class="l">Side</th><th scope="col">Contracts</th><th scope="col">Notional $</th>`
+    + `<th scope="col">Share of gross</th></tr></thead><tbody>`;
   for (const g of groups) {
     const rows = j.positions.filter(p => p.asset_class === g);
     const gn = rows.reduce((a, r) => a + Math.abs(r.notional_USD), 0);
@@ -421,7 +421,7 @@ fetch(bust("data/history.json")).then(r => r.json()).then(h => {
   const mo = {};
   for (const r of d) (mo[r.date.slice(0, 7)] = mo[r.date.slice(0, 7)] || []).push(r);
   const keys = Object.keys(mo).sort();
-  let prev = d[0].equity_USD - (d[0].gross_pnl_USD - d[0].commission_USD
+  let prev = d[0].equity_USD - (d[0].gross_pnl_USD - d[0].trading_cost_USD
                                 + d[0].interest_USD);
   const rows = keys.map(k => {
     const last = mo[k][mo[k].length - 1].equity_USD;
@@ -431,8 +431,8 @@ fetch(bust("data/history.json")).then(r => r.json()).then(h => {
   });
   const lastMonth = keys[keys.length - 1];
   el("monthly").innerHTML =
-    `<thead><tr><th class="l">Month</th><th>Return</th><th>Sessions</th>`
-    + `<th class="l"></th></tr></thead><tbody>`
+    `<thead><tr><th scope="col" class="l">Month</th><th scope="col">Return</th><th scope="col">Sessions</th>`
+    + `<th scope="col" class="l"></th></tr></thead><tbody>`
     + rows.map(r => `<tr><td class="l">${r.k}</td>`
         + `<td class="${cls2(r.ret)}">${SIGN(r.ret * 100)}</td>`
         + `<td>${r.n}</td>`
