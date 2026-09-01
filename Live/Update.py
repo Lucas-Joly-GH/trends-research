@@ -21,7 +21,26 @@ if not _NODE.isascii():
     platform.node = lambda _n=_NODE.encode("ascii", "ignore").decode(): _n
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import shut_markets as _sm  # noqa: E402
+
 RUN_STAMP = HERE / ".pipeline_run.json"
+
+_SHUT: dict | None = None
+
+
+def shut_state() -> dict:
+    """Les marches qui n'ont pas avance, et pourquoi. Calcule une fois."""
+    global _SHUT
+    if _SHUT is None:
+        _SHUT = _sm.survey(HERE / "2_Engine" / "Trading_book")
+    return _SHUT
+
+
+def excused() -> set:
+    """Ceux dont le retard s'explique par un calendrier propre."""
+    return {k for k, (_d, m) in shut_state()["shut"].items()
+            if m == _sm.HOLIDAY}
 CYCLES = HERE / "1_Roll" / "contract_cycles.py"
 BOOK = HERE / "2_Engine" / "trading_book.py"
 PORTFOLIO = HERE / "3_Portfolio" / "portfolio.py"
@@ -533,10 +552,16 @@ def verify_books(started: float, expected: int | None) -> int:
                  f"{', '.join(hold_mismatch[:6])}" if hold_mismatch else "all files"))
     if ends:
         newest = max(ends.values())
-        behind = sorted(k for k, v in ends.items() if v != newest)
+        exc = excused()
+        behind = sorted(k for k, v in ends.items()
+                        if v != newest and k not in exc)
+        shut_here = sorted(k for k, v in ends.items()
+                           if v != newest and k in exc)
         r.append(_ok("every book ends on the newest session", not behind,
                      f"{newest}"
-                     + (f"   BEHIND: {', '.join(behind[:6])}" if behind else "")))
+                     + (f"   BEHIND: {', '.join(behind[:6])}" if behind else "")
+                     + (f"   (marché fermé, non compté: "
+                        f"{', '.join(shut_here)})" if shut_here else "")))
 
     r.append(_ok("Panama anchored: last Continuous_C == last close", not anchor,
                  f"{', '.join(anchor[:6])}" if anchor else "all files"))
@@ -937,10 +962,17 @@ def verify_portfolio(started: float) -> int:
                      never_early,
                      f"cumulative charged <= decided on all {len(pc):,} sessions"))
         last = float(np.nan_to_num(pc[-1]))
+        # Un ordre decide avant la derniere seance sur un marche ferme n'a
+        # pas pu s'executer : il reste en attente en plus de ceux du jour.
+        st = shut_state()
+        held = _sm.pending_from_shut(
+            HERE / "4_Bookkeeping" / "pending.csv", st["shut"], st["as_of"])
         r.append(_ok("every dollar decided is charged, or still pending",
-                     abs(pending - last) < 0.01,
+                     abs(pending - last - held) < 0.01,
                      f"decided {cum_dec[-1]:,.2f}  charged {cum_chg[-1]:,.2f}  "
-                     f"pending {pending:,.2f} vs last session {last:,.2f}"))
+                     f"pending {pending:,.2f} vs last session {last:,.2f}"
+                     + (f" + {held:,.2f} retenu sur marché fermé"
+                        if held else "")))
         gr, nrr = g("gross_ret"), g("net_ret")
         if gr is not None and nrr is not None and nav is not None:
             exp = np.zeros(len(nav)); exp[1:] = pnet[1:] / nav[:-1]
@@ -1293,12 +1325,32 @@ def verify_bookkeeping(started: float) -> int:
     P = pl.read_parquet(pend_f.with_suffix(".parquet"))
     X = pl.read_parquet(exe_f.with_suffix(".parquet"))
     asof = dec.max()
-    ok_p = (P.height == P.get_column("instrument").n_unique()
+    # Un roulement produit DEUX jambes sur le meme instrument, sortante et
+    # entrante, sur deux contrats differents. Exiger un ordre par instrument
+    # faisait echouer la verification chaque jour de roulement.
+    extra = []
+    if "kind" in P.columns:
+        for inst, grp in P.group_by("instrument"):
+            name = inst[0] if isinstance(inst, tuple) else inst
+            if grp.height == 1:
+                continue
+            kinds = set(grp.get_column("kind").to_list())
+            legs = grp.get_column("contract").n_unique()
+            if not (grp.height == 2 and legs == 2
+                    and kinds == {"ROLL_IN", "ROLL_OUT"}):
+                extra.append(str(name))
+    else:
+        extra = ["(colonne kind absente)"] if (
+            P.height != P.get_column("instrument").n_unique()) else []
+    rolls = P.height - P.get_column("instrument").n_unique()
+    ok_p = (not extra
             and bool((P.get_column("decision_date") <= asof).all())
             and bool((P.get_column("execute_at").is_null()
                       | (P.get_column("execute_at") > asof)).all()))
-    r.append(_ok("pending: one per instrument, none filled yet", ok_p,
-                 f"{P.height} order(s) for the next open"))
+    r.append(_ok("pending: one per instrument, or a roll's two legs", ok_p,
+                 f"{P.height} order(s) for the next open"
+                 + (f", dont {rolls} jambe(s) de roulement" if rolls else "")
+                 + (f"   ANORMAL: {', '.join(extra[:5])}" if extra else "")))
     ok_x = (not X.height) or (
         bool((X.get_column("execute_at") == asof).all())
         and X.height == X.get_column("instrument").n_unique())
@@ -1462,7 +1514,12 @@ def verify_stages(started: float) -> int:
         if pv.height == 0 or bv.height == 0:
             continue
         if pv.get_column("date")[0] != bv.get_column("date")[0]:
-            drift.append(f"{f.stem} date"); continue
+            # Marche ferme : le portefeuille reporte la position sur la
+            # seance du panel alors que le livre s'arrete la veille. Les
+            # deux ont raison.
+            if f.stem not in excused():
+                drift.append(f"{f.stem} date")
+            continue
         for col in ("SIGNAL", "price_vol_USD_ann", "s_g_vol"):
             if col in pv.columns and col in bv.columns:
                 a, c = pv.get_column(col)[0], bv.get_column(col)[0]
@@ -2667,6 +2724,18 @@ def main() -> int:
                            encoding="utf-8")
 
     _stamp(failures)
+
+    # Dire QUELS marches n'ont pas avance et POURQUOI. Sans cette ligne, une
+    # journee ou Londres est fermee ressemble a une journee ou le pipeline
+    # n'a rien fait : la fenetre du .exe ne montrait qu'un compte de checks.
+    print()
+    try:
+        _st = shut_state()
+        _line = _sm.describe(_st)
+        print(f"  [HOLD] {_line}" if _line
+              else f"  [HOLD] aucun retard, tous sur {_st['as_of']}")
+    except Exception as _e:
+        print(f"  [HOLD] etat des marches indisponible ({_e})")
 
     published = False
     deployed = 1

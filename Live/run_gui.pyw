@@ -34,6 +34,10 @@ SUB = re.compile(r"^\s*\[\s*(\d+)/\s*(\d+)\]")
 DONE = re.compile(r"pipeline complete in (.+)$")
 SUITE = re.compile(r"^\s*(\d+)/(\d+) passed")
 BAD = re.compile(r"\[FAIL\]|\[ABORT\]|Traceback")
+# Les marches qui n'ont pas avance, et pourquoi. Update.py imprime cette
+# ligne apres le releve du panel ; la fenetre la retient pour le resume,
+# sinon elle defile et personne ne la voit.
+HOLD = re.compile(r"^\s*\[HOLD\]\s*(.+?)\s*$")
 
 
 class App:
@@ -49,6 +53,7 @@ class App:
         self.checks = 0
         self.failed_checks = 0
         self.summary = ""
+        self.held = ""
         self.logpath = None
         self.proc = None
 
@@ -147,6 +152,9 @@ class App:
         if s:
             self.checks += int(s.group(2))
             self.failed_checks += int(s.group(2)) - int(s.group(1))
+        h = HOLD.match(line)
+        if h:
+            self.held = h.group(1)
         d = DONE.search(line)
         if d:
             self.summary = d.group(1).strip()
@@ -170,12 +178,16 @@ class App:
                 bits.append(f"completed in {self.summary}")
             if self.checks:
                 bits.append(f"{self.checks} checks passed")
-            self.note.config(text="   ·   ".join(bits))
+            txt = "   ·   ".join(bits)
+            if self.held:
+                txt += chr(10) + self.held
+            self.note.config(text=txt)
         else:
             self.note.config(
                 text=f"exit code {rc}"
                      + (f"   ·   {self.failed_checks} check(s) failed"
                         if self.failed_checks else "")
+                     + ((chr(10) + self.held) if self.held else "")
                      + "\nOpen the log to see what went wrong.")
         if self.logpath and self.logpath.exists():
             self.logbtn.config(state="normal")

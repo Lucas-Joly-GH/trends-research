@@ -26,6 +26,21 @@ LEDGER = LIVE / "4_Bookkeeping" / "Orders.parquet"
 STATEMENT = LIVE / "4_Bookkeeping" / "statement.parquet"
 
 
+
+def _shut_held() -> float:
+    """Commission decidee mais retenue faute de seance sur un marche ferme."""
+    import sys as _s, pathlib as _p
+    live = _p.Path(__file__).resolve().parents[2]
+    _s.path.insert(0, str(live))
+    try:
+        import shut_markets as _sm
+        st = _sm.survey(live / "2_Engine" / "Trading_book")
+        return _sm.pending_from_shut(
+            live / "4_Bookkeeping" / "pending.csv", st["shut"], st["as_of"])
+    except Exception:
+        return 0.0
+
+
 def _load(path: Path, name: str):
     spec = importlib.util.spec_from_file_location(name, path)
     mod = importlib.util.module_from_spec(spec)
@@ -203,6 +218,11 @@ def ties() -> Ties | None:
         tot_s += b
         if abs(a - b) > max(0.01, abs(b) * 1e-9):
             mis += 1
+    # Un ordre decide sur un marche ferme la veille n'a pas pu s'executer :
+    # le grand livre l'a decide, le releve ne l'a pas encore preleve. Sans
+    # cette retenue, chaque jour ferie de Londres fait echouer E et G.
+    _held = _shut_held()
+    tot_l -= _held
     T.add("E  ledger commission vs statement, per day", tot_l, tot_s, 1e-9, "$",
           note=f"{mis} of {len(pdates) - 1:,} days disagree; the total sits "
                f"below C by the last session's cost, which cost_lag has not "
@@ -233,7 +253,8 @@ def ties() -> Ties | None:
     start = int(np.argmax(eq > 0))
     flows = pnl_p - np.concatenate([[0.0], cost[:-1]]) + ist
     T.add("G  equity == NAV0 + cumulative flows",
-          float(eq[start]) + float(flows[start + 1:].sum()), float(eq[-1]))
+          float(eq[start]) + float(flows[start + 1:].sum()) - _held,
+          float(eq[-1]))
 
     booked = 0.0
     for i, c, v in zip(led.get_column("instrument").to_list(),
