@@ -168,6 +168,65 @@ def human(s):
     return f"{s}s" if s < 60 else f"{s // 60}m {s % 60:02d}s"
 
 
+ICON_B64 = (
+    "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"
+)
+
+
+def window_icon(root):
+    """Poser l'icone du site sur la fenetre, a la place de la plume de Tk.
+
+    EN BASE64 PLUTOT QU'EN FICHIER JOINT.  Un .ico embarque avec --add-data
+    demanderait de resoudre son chemin, qui differe entre le script et le
+    binaire gele : un chemin de plus a se tromper, pour une image de 2 Ko.
+    Ici l'icone voyage dans le code et ne peut pas manquer a l'appel.
+
+    La reference est gardee sur `root` : Tk ne retient pas ses PhotoImage,
+    et une image collectee laisse une icone vide sans rien signaler.
+    """
+    try:
+        img = tk.PhotoImage(data=ICON_B64)
+        root.iconphoto(True, img)
+        root._icon = img
+    except Exception:
+        pass
+
 def dark_titlebar(root):
     """Assombrir la barre de titre, que Tk ne peint pas.
 
@@ -248,6 +307,7 @@ class App:
 
         self._style()
         self._build()
+        window_icon(root)
         dark_titlebar(root)
 
         threading.Thread(target=self.run, daemon=True).start()
