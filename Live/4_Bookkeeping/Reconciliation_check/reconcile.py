@@ -210,23 +210,52 @@ def ties() -> Ties | None:
     day_led: dict[str, float] = defaultdict(float)
     for (_i, d), c in led_c.items():
         day_led[d] += c
+    # LES ECARTS JOURNALIERS NE SONT PAS DU BRUIT : ce sont des REPORTS.
+    # Une commission decidee la veille d'une seance ou le marche concerne est
+    # ferme ne peut pas etre prelevee le lendemain ; elle l'est a la
+    # reouverture. Les ecarts arrivent donc par paires +/- a une seance
+    # d'intervalle, sur les jours ou les calendriers divergent : MLK,
+    # Presidents' Day, Vendredi saint, lundi de Paques, 1er mai, lundis
+    # feries britanniques, Juneteenth, 4 juillet.
+    #
+    # Les compter et s'arreter la n'apprend rien. Ce qui compte, c'est que
+    # chaque report SE DENOUE : on suit le solde decide-mais-pas-preleve et
+    # on verifie qu'il revient a zero, et que ce qui reste ouvert a la fin
+    # vaut exactement la commission retenue sur les marches fermes.
     mis = 0
     tot_l = tot_s = 0.0
+    run = 0.0
+    opened_at = None
+    longest = 0
     for k in range(1, len(pdates)):
         a, b = day_led.get(pdates[k - 1], 0.0), sc.get(pdates[k], 0.0)
         tot_l += a
         tot_s += b
+        run += a - b
         if abs(a - b) > max(0.01, abs(b) * 1e-9):
             mis += 1
+        if abs(run) > 0.01:
+            opened_at = k if opened_at is None else opened_at
+            longest = max(longest, k - opened_at + 1)
+        else:
+            opened_at = None
+    unsettled = run
     # Un ordre decide sur un marche ferme la veille n'a pas pu s'executer :
     # le grand livre l'a decide, le releve ne l'a pas encore preleve. Sans
     # cette retenue, chaque jour ferie de Londres fait echouer E et G.
     _held = _shut_held()
     tot_l -= _held
     T.add("E  ledger commission vs statement, per day", tot_l, tot_s, 1e-9, "$",
-          note=f"{mis} of {len(pdates) - 1:,} days disagree; the total sits "
-               f"below C by the last session's cost, which cost_lag has not "
-               f"yet paid")
+          note=f"{mis} report(s) de commission sur calendriers divergents, "
+               f"le plus long sur {longest} séance(s) ; "
+               f"{unsettled:,.2f} $ encore ouvert")
+
+    # L'invariant qui donne son sens aux reports : ce qui n'est pas encore
+    # preleve doit etre exactement ce qui attend une reouverture de marche.
+    T.add("E2 les reports de commission se dénouent", unsettled, _held,
+          1e-9, "$",
+          note="tout écart décidé-moins-prélevé doit correspondre à un ordre "
+               "en attente sur un marché fermé")
 
     rf = {d: _f(x) for d, x in zip(
         pl.read_parquet(IRX).get_column("date").to_list(),
