@@ -1934,8 +1934,19 @@ def verify_render(started: float) -> int:
                 try:
                     browser = pw.chromium.launch()
                 except Exception as e:
-                    r.append(_note("render check skipped",
-                                   f"chromium not available: {str(e)[:60]}"))
+                    # LE DIAGNOSTIC N'EST PLUS COUPE A 60 CARACTERES.
+                    # Playwright dit QUEL executable il attend, et c'est la
+                    # seule chose qui distingue « navigateur absent » de
+                    # « version attendue differente de celle installee ». La
+                    # coupe tombait juste avant le chemin : on lisait
+                    # « Executable doesn't exist at C:/Users/336 » et on
+                    # n'apprenait rien de ce qu'il fallait savoir. On le rend
+                    # sur plusieurs lignes plutot qu'en une ligne interminable
+                    # dans un tableau aligne.
+                    detail = " ".join(str(e).split())
+                    r.append(_note("render check skipped", detail[:104]))
+                    for k in range(104, min(len(detail), 520), 104):
+                        r.append(_note("", detail[k:k + 104]))
                     return _report("rendered pages -- headless", r)
                 try:
                     for name in pages:

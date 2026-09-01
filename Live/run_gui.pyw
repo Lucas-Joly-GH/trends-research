@@ -98,6 +98,14 @@ DONE = re.compile(r"pipeline complete in (.+)$")
 SUITE = re.compile(r"^\s*(\d+)/(\d+) passed")
 LIVE = re.compile(r"^\s*\[LIVE\]\s*(.+?)\s*$")
 HOLD = re.compile(r"^\s*\[HOLD\]\s*(.+?)\s*$")
+# UNE VERIFICATION QUI NE TOURNE PAS DOIT SE VOIR.  Le controle de rendu --
+# sept pages, deux themes -- est celui qui garde ce qu'on publie. Quand
+# chromium manque, il se note « [NOTE] render check skipped », ce qui ne
+# compte ni comme reussite ni comme echec : la fenetre affichait donc
+# SUCCESS et deux seances sont parties sans que leurs pages aient ete
+# ouvertes une seule fois. Rien n'a echoue, c'est vrai -- mais quelque
+# chose n'a pas eu lieu, et le resume doit le dire.
+SKIPPED = re.compile(r"^\s*\[NOTE\]\s*(render check skipped)\b")
 # LES DUREES SONT CHRONOMETREES ICI, pas lues dans le flux. Update.py
 # n'annonce « ok (210s) » que pour les cinq etapes numerotees : les
 # verifications, NDU et surtout le deploiement -- qui attend desormais
@@ -277,6 +285,7 @@ class App:
         self.live = ""
         self.summary = ""
         self.held = ""
+        self.skipped = ""
         # Ce que le panneau montre finalement : ecrit apres coup, parce que la
         # note se compose avant qu'on sache si un marqueur d'echec existe. La
         # note annoncait « filtered to the failures » meme quand rien n'avait
@@ -575,6 +584,10 @@ class App:
         h = HOLD.match(line)
         if h:
             self.held = h.group(1)
+        k = SKIPPED.match(line)
+        if k:
+            self.skipped = ("The render check did not run — the published "
+                            "pages were never opened.")
         v = LIVE.match(line)
         if v:
             self.live = v.group(1)
@@ -687,6 +700,8 @@ class App:
                 + FOCUS_PLACEHOLDER
         if self.live and not fatal:
             txt += chr(10) + self.live
+        if self.skipped and not fatal:
+            txt += chr(10) + self.skipped
         if self.held and not fatal:
             txt += chr(10) + self.held
         self.note.config(text=txt)
