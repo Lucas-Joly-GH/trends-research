@@ -7,6 +7,15 @@ polars>=1.44
 numpy>=2.4
 norgatedata>=1.0.77     # stage 1 only; needs the NDU app running locally
 scipy>=1.17             # not used by the pipeline yet; kept for the engine
+yfinance>=0.2           # LE SECOND AVIS SUR LE CHANGE, et rien d'autre.
+                        # trading_book.py confronte son Derived_Rate au taux du
+                        # fournisseur ET a celui-ci, puis retient le pire des
+                        # deux ecarts. Absent, l'import echouait en silence
+                        # ([SKIP] x6 par execution) et le controle tournait sur
+                        # une seule source -- il ne pouvait donc plus rien voir
+                        # de ce qu'une source unique se trompe a dire. Le
+                        # pipeline continue sans, ce qui est precisement
+                        # pourquoi personne ne l'avait remarque.
 esprima>=4.0.1          # JS syntax check in Update.py's verify step.  It tops
                         # out at ES2017, so the pages must avoid ?. and ?? --
                         # a script that does not parse renders the whole page
