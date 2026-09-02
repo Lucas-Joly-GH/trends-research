@@ -1,7 +1,16 @@
-"""La fenetre du pipeline quotidien.
+"""La console de recherche.
 
-TROIS CHOSES QUE CETTE FENETRE DOIT FAIRE, dans cet ordre : dire ou en est
-l'execution, dire ce qu'elle fait, dire comment elle a fini. Le reste est
+ELLE NE LANCE PLUS RIEN TOUTE SEULE.  Pendant toute la preparation de la
+soutenance, ce logiciel n'avait qu'un seul geste : s'ouvrir et executer
+Update.py. C'etait juste, tant que publier etait la seule chose a faire.
+Maintenant que la recherche reprend, le pipeline redevient ce qu'il aurait
+toujours du etre -- une fonction parmi d'autres, qu'on demande. L'ecran
+d'accueil est donc un plan de travail, et chaque ecran vit dans sa classe :
+`Pipeline` execute, `Benchmarks` classe. En ajouter un revient a ecrire une
+classe et une ligne dans `Shell.VIEWS`.
+
+TROIS CHOSES QUE L'ECRAN DU PIPELINE DOIT FAIRE, dans cet ordre : dire ou en
+est l'execution, dire ce qu'elle fait, dire comment elle a fini. Le reste est
 decoration, et se juge a ce qu'il retire plutot qu'a ce qu'il ajoute.
 
 LA BARRE EST CALIBREE SUR DES MESURES, PAS SUR DES INTUITIONS.  L'ancienne
@@ -28,6 +37,12 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+
+# Lance depuis un autre dossier, le module voisin ne serait pas trouve. Une
+# fois gele, PyInstaller l'embarque et il n'y a rien a ajouter.
+if not getattr(sys, "frozen", False):
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import benchmarks as bench          # le calcul du classement, partage avec la CLI
 
 if getattr(sys, "frozen", False):
     BASE = pathlib.Path(sys.executable).resolve().parent
@@ -339,13 +354,17 @@ def dark_titlebar(root):
         pass
 
 
-class App:
-    def __init__(self, root):
+class Pipeline:
+    """L'execution d'Update.py. Ce n'etait pas un ecran mais TOUT le logiciel :
+    la fenetre s'ouvrait, lancait le pipeline et n'existait que pour lui. Elle
+    est devenue un panneau parmi d'autres, et surtout elle ne part plus toute
+    seule -- on la lance quand on veut la lancer.
+    """
+
+    def __init__(self, root, host):
         self.root = root
-        root.title("trends-research — daily run")
-        root.geometry("980x680")
-        root.minsize(760, 520)
-        root.configure(bg=PAGE)
+        self.host = host
+        self.started = False
 
         self.q = queue.Queue()
         self.rc = None
@@ -381,12 +400,53 @@ class App:
 
         self._style()
         self._build()
-        window_icon(root)
-        dark_titlebar(root)
 
+    def _reset(self):
+        """Efface la course precedente. Sans cela, la seconde execution
+        heriterait du verdict de la premiere : les pastilles resteraient
+        vertes, le flux garderait ses lignes et « SUCCESS » s'afficherait
+        avant meme que quoi que ce soit ait tourne.
+        """
+        self.rc = None
+        self.phase_i = -1
+        self.sub_seen = 0
+        self.checks = self.failed_checks = 0
+        self.live = self.summary = self.held = self.skipped = ""
+        self.focus_note = ""
+        self.logpath = None
+        self.proc = None
+        self.lines = []
+        self.observed = {}
+        self.q = queue.Queue()
+        self.follow = True
+        self._paint_follow()
+        self.bar.config(style="dark.Horizontal.TProgressbar")
+        self.bar["value"] = 0
+        for dot, txt in self.steps:
+            dot.configure(text="·", fg=FAINT)
+            txt.configure(fg=FAINT)
+        for w in self.insight.winfo_children():
+            w.destroy()
+        self.term.configure(state="normal")
+        self.term.delete("1.0", "end")
+        self.term.configure(state="disabled")
+        self.logbtn.configure(state="disabled")
+
+    def start(self):
+        """Lance l'execution. Sans effet si elle tourne deja."""
+        if self.started:
+            return
+        self._reset()
+        self.started = True
+        self.t0 = self.phase_t0 = time.time()
+        self.runbtn.configure(state="disabled", text="Running…")
+        self.stopbtn.configure(state="normal")
+        self.result.configure(text="", fg=INK)
+        self.note.configure(text="")
+        self.phase.configure(text="Starting…")
         threading.Thread(target=self.run, daemon=True).start()
-        root.after(80, self.pump)
-        root.after(250, self.tick)
+        self.root.after(80, self.pump)
+        self.root.after(250, self.tick)
 
     # ----------------------------------------------------------- calibration
     def _spans(self):
@@ -426,7 +486,7 @@ class App:
                         anchor="w", justify="left", **kw)
 
     def _build(self):
-        r = self.root
+        r = self.host
         head = tk.Frame(r, bg=PAGE)
         head.pack(fill="x", padx=20, pady=(16, 0))
         self._lab(head, "Daily pipeline", ("Segoe UI", 16)).pack(side="left")
@@ -516,11 +576,11 @@ class App:
 
         btns = tk.Frame(foot, bg=PAGE)
         btns.pack(side="right")
-        self.closebtn = self._btn(btns, "Cancel", self.on_close)
         self.logbtn = self._btn(btns, "Open log", self.open_log, "disabled")
         self.copybtn = self._btn(btns, "Copy output", self.copy_out)
         self.sitebtn = self._btn(btns, "Open site", self.open_site)
-        r.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.stopbtn = self._btn(btns, "Stop", self.stop, "disabled")
+        self.runbtn = self._btn(btns, "Run pipeline", self.start)
 
     def _btn(self, parent, text, cmd, state="normal"):
         b = tk.Button(parent, text=text, font=("Segoe UI", 9), bg=PANEL,
@@ -793,6 +853,11 @@ class App:
     def finish(self, rc, fatal=""):
         self.rc = rc
         ok = rc == 0
+        # On peut relancer : la journee peut demander une seconde passe apres
+        # une correction, et rouvrir le logiciel pour cela serait absurde.
+        self.runbtn.configure(state="normal", text="Run again")
+        self.stopbtn.configure(state="disabled")
+        self.started = False
         # SUCCESS NE S'AFFICHE QUE SI LE SITE SERT DEJA CETTE EXECUTION.
         # Le code 3 dit « rien n'a echoue, mais ce n'est pas encore en ligne »
         # -- ni vert ni rouge, parce que ce n'est ni l'un ni l'autre et qu'il
@@ -889,15 +954,262 @@ class App:
 
         if self.logpath and self.logpath.exists():
             self.logbtn.config(state="normal")
-        self.closebtn.config(text="Close")
 
     def open_log(self):
         if self.logpath and self.logpath.exists():
             os.startfile(str(self.logpath))
 
-    def on_close(self):
+    def stop(self):
+        """Interrompt l'execution en cours, sans fermer le logiciel."""
         if self.rc is None and self.proc and self.proc.poll() is None:
             self.proc.terminate()
+
+    def busy(self) -> bool:
+        return bool(self.started and self.rc is None)
+
+    def close(self):
+        """Appele quand la fenetre se ferme : ne rien laisser tourner."""
+        self.stop()
+
+
+class Benchmarks:
+    """Le classement des strategies etudiees.
+
+    Le calcul n'est pas ici : il vit dans benchmarks.py, qui sert aussi en
+    ligne de commande. L'ecran ne fait que montrer et trier -- si les deux
+    surfaces calculaient chacune de leur cote, elles finiraient par ne plus
+    dire la meme chose, ce qui est exactement le defaut qu'un classement doit
+    eviter.
+    """
+
+    COLS = [("rank", "#", 34, "e"), ("name", "Strategy", 250, "w"),
+            ("total", "Total", 78, "e"), ("cagr", "CAGR", 74, "e"),
+            ("vol", "Vol", 70, "e"), ("sharpe", "Sharpe", 68, "e"),
+            ("max_dd", "Max DD", 78, "e"), ("calmar", "Calmar", 68, "e"),
+            ("vn", "vn 10%", 74, "e"), ("window", "Window", 128, "w")]
+
+    def __init__(self, root, host):
+        self.root = root
+        self.host = host
+        self.by = "sharpe"
+        self.rows = []
+        self._build()
+        self.refresh()
+
+    def _build(self):
+        r = self.host
+        head = tk.Frame(r, bg=PAGE)
+        head.pack(fill="x", padx=20, pady=(16, 0))
+        tk.Label(head, text="Benchmarks", font=("Segoe UI", 16), bg=PAGE,
+                 fg=INK).pack(side="left")
+        self.count = tk.Label(head, text="", font=("Consolas", 10), bg=PAGE,
+                              fg=MUTED)
+        self.count.pack(side="right")
+
+        self.sub = tk.Label(r, text="", font=("Segoe UI", 9), bg=PAGE,
+                            fg=MUTED, anchor="w", justify="left")
+        self.sub.pack(fill="x", padx=20, pady=(4, 8))
+
+        st = ttk.Style()
+        st.configure("bench.Treeview", background=PANEL, fieldbackground=PANEL,
+                     foreground=INK, borderwidth=0, rowheight=24,
+                     font=("Consolas", 9))
+        st.configure("bench.Treeview.Heading", background=PAGE, foreground=MUTED,
+                     borderwidth=0, font=("Segoe UI", 8))
+        st.map("bench.Treeview", background=[("selected", RULE)],
+               foreground=[("selected", ACCENT)])
+        st.map("bench.Treeview.Heading", background=[("active", RULE)],
+               foreground=[("active", ACCENT)])
+
+        wrap = tk.Frame(r, bg=RULE)
+        wrap.pack(fill="both", expand=True, padx=20, pady=(0, 8))
+        self.tv = ttk.Treeview(wrap, style="bench.Treeview", show="headings",
+                               columns=[c[0] for c in self.COLS], height=10)
+        for key, label, w, anchor in self.COLS:
+            self.tv.heading(key, text=label,
+                            command=lambda k=key: self.sort(k))
+            self.tv.column(key, width=w, anchor=anchor, stretch=(key == "name"))
+        self.tv.tag_configure("best", foreground=ACCENT)
+        self.tv.tag_configure("off", foreground=WARN)
+        self.tv.pack(side="left", fill="both", expand=True, padx=1, pady=1)
+        sb = tk.Scrollbar(wrap, orient="vertical", command=self.tv.yview,
+                          bg=PANEL, troughcolor=PAGE, activebackground=MUTED,
+                          highlightthickness=0, bd=0, width=12, relief="flat",
+                          elementborderwidth=0)
+        self.tv.configure(yscrollcommand=sb.set)
+        sb.pack(side="right", fill="y")
+
+        self.foot = tk.Label(r, text="", font=("Segoe UI", 9), bg=PAGE,
+                             fg=MUTED, anchor="w", justify="left",
+                             wraplength=820)
+        self.foot.pack(fill="x", padx=20, pady=(0, 6))
+
+        bar = tk.Frame(r, bg=PAGE)
+        bar.pack(fill="x", padx=20, pady=(0, 14))
+        tk.Label(bar, text="Sorted by clicking a column header.",
+                 font=("Segoe UI", 8), bg=PAGE, fg=FAINT).pack(side="left")
+        for text, cmd in (("Refresh", self.refresh),
+                          ("Open register", self.open_register)):
+            tk.Button(bar, text=text, font=("Segoe UI", 9), bg=PANEL, fg=INK,
+                      relief="flat", bd=0, padx=12, pady=4,
+                      activebackground=RULE, activeforeground=ACCENT,
+                      command=cmd).pack(side="right", padx=4)
+
+    # ------------------------------------------------------------------ donnees
+    def refresh(self):
+        try:
+            self.rows = bench.entries()
+        except Exception as exc:
+            self.rows = []
+            self.sub.configure(text="Registry unreadable: %s: %s"
+                                    % (type(exc).__name__, exc), fg=NEG)
+            return
+        self.paint()
+
+    def sort(self, key):
+        self.by = key if key in bench.SORTS else self.by
+        self.paint()
+
+    def paint(self):
+        for i in self.tv.get_children():
+            self.tv.delete(i)
+        if not self.rows:
+            self.sub.configure(
+                text="Nothing registered yet. The four site series come from "
+                     "docs/data/expectations.json, which the pipeline writes.",
+                fg=MUTED)
+            self.count.configure(text="")
+            self.foot.configure(text="")
+            return
+        rows = bench.rank(self.rows, self.by)
+        w0, w1 = bench.flag_windows(rows)
+        pct = lambda v: "%.2f%%" % (100 * v)
+        for e in rows:
+            s, v = e["stats"], e.get("vn") or {}
+            vt = v.get("total")
+            tags = []
+            if e.get("off_window"):
+                tags.append("off")
+            elif e["rank"] == 1:
+                tags.append("best")
+            self.tv.insert("", "end", tags=tags, values=(
+                ("%d*" % e["rank"]) if e.get("off_window") else e["rank"],
+                e["name"],
+                "%.2fx" % (1.0 + s["total"]),
+                pct(e["cagr"]), pct(s["vol"]), "%.2f" % s["sharpe"],
+                pct(s["max_dd"]), "%.2f" % e["calmar"],
+                ("%.2fx" % (1.0 + vt)) if vt is not None else "-",
+                "%s to %s" % (e.get("from", "?"), e.get("to", "?")),
+            ))
+        self.count.configure(text="%d strategies" % len(rows))
+        self.sub.configure(
+            text="Daily excess returns, %s. Sharpe = mean x 256 / vol; the "
+                 "drawdown is read on a NAV that carries interest. Same "
+                 "measure as the site, so the numbers agree with it."
+                 % ("%s to %s" % (w0, w1)), fg=MUTED)
+        off = [e for e in rows if e.get("off_window")]
+        if off:
+            self.foot.configure(
+                text="* measured over a different period, so not directly "
+                     "comparable: " + "; ".join(
+                         "%s (%s to %s, %s sessions)"
+                         % (e["name"], e.get("from", "?"), e.get("to", "?"),
+                            "{:,}".format(e.get("sessions", 0)))
+                         for e in off), fg=WARN)
+        else:
+            self.foot.configure(text="", fg=MUTED)
+
+    def open_register(self):
+        d = bench.REGISTER
+        d.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(d))
+
+    def close(self):
+        pass
+
+
+class Shell:
+    """La fenetre, et la navigation entre les ecrans.
+
+    Le logiciel lancait Update.py a l'ouverture : il n'avait donc qu'une seule
+    chose a dire et la disait sans qu'on demande. Il devient un plan de
+    travail -- le pipeline reste, mais comme une fonction parmi d'autres, et
+    la recherche a maintenant ou se poser.
+    """
+
+    VIEWS = [("pipeline", "Daily pipeline", "Fetch, verify, publish"),
+             ("benchmarks", "Benchmarks", "Rank the strategies")]
+
+    def __init__(self, root):
+        self.root = root
+        root.title("trends-research")
+        root.geometry("1060x700")
+        root.minsize(860, 560)
+        root.configure(bg=PAGE)
+
+        self.views = {}
+        self.frames = {}
+        self.buttons = {}
+        self.current = None
+
+        body = tk.Frame(root, bg=PAGE)
+        body.pack(fill="both", expand=True)
+
+        nav = tk.Frame(body, bg=PANEL, width=190)
+        nav.pack(side="left", fill="y")
+        nav.pack_propagate(False)
+        tk.Label(nav, text="trends-research", font=("Segoe UI", 11, "bold"),
+                 bg=PANEL, fg=ACCENT).pack(anchor="w", padx=16, pady=(20, 2))
+        tk.Label(nav, text="research console", font=("Segoe UI", 8),
+                 bg=PANEL, fg=FAINT).pack(anchor="w", padx=16, pady=(0, 16))
+        for key, label, hint in self.VIEWS:
+            b = tk.Label(nav, text=label, font=("Segoe UI", 10), bg=PANEL,
+                         fg=MUTED, anchor="w", padx=16, pady=7)
+            b.pack(fill="x")
+            b.bind("<Button-1>", lambda _e, k=key: self.show(k))
+            b.bind("<Enter>", lambda _e, w=b: w.configure(bg=RULE))
+            b.bind("<Leave>", lambda _e, w=b, k=key: w.configure(
+                bg=PANEL if self.current != k else RULE))
+            tk.Label(nav, text=hint, font=("Segoe UI", 8), bg=PANEL, fg=FAINT,
+                     anchor="w", padx=16).pack(fill="x", pady=(0, 8))
+            self.buttons[key] = b
+
+        self.site = tk.Label(nav, text="Open the site", font=("Segoe UI", 8),
+                             bg=PANEL, fg=FAINT, anchor="w", padx=16)
+        self.site.pack(side="bottom", fill="x", pady=(0, 16))
+        self.site.bind("<Button-1>", lambda _e: __import__(
+            "webbrowser").open(SITE))
+
+        self.area = tk.Frame(body, bg=PAGE)
+        self.area.pack(side="left", fill="both", expand=True)
+
+        window_icon(root)
+        dark_titlebar(root)
+        root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.show("pipeline")
+
+    def show(self, key):
+        if key == self.current:
+            return
+        for f in self.frames.values():
+            f.pack_forget()
+        f = self.frames.get(key)
+        if f is None:
+            f = self.frames[key] = tk.Frame(self.area, bg=PAGE)
+            self.views[key] = (Pipeline(self.root, f) if key == "pipeline"
+                               else Benchmarks(self.root, f))
+        f.pack(fill="both", expand=True)
+        self.current = key
+        for k, b in self.buttons.items():
+            b.configure(bg=RULE if k == key else PANEL,
+                        fg=ACCENT if k == key else MUTED)
+
+    def on_close(self):
+        for v in self.views.values():
+            try:
+                v.close()
+            except Exception:
+                pass
         self.root.destroy()
 
 
@@ -907,7 +1219,7 @@ def main():
         root.call("tk", "scaling", 1.3)
     except tk.TclError:
         pass
-    App(root)
+    Shell(root)
     root.mainloop()
     return 0
 
