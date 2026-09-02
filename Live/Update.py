@@ -2000,14 +2000,26 @@ def verify_render(started: float) -> int:
                             view = "%d entries: %s" % (
                                 len(kids), ", ".join(kids)[:70])
                         except Exception as list_err:
-                            view = "cannot list (%s)" % type(list_err).__name__
+                            # OU L'ARBRE S'ARRETE-T-IL, EXACTEMENT ?  Le
+                            # dossier parent est introuvable pour CE processus
+                            # alors qu'il est sur le disque : reste a savoir
+                            # jusqu'ou il remonte. Si `ms-playwright` lui-meme
+                            # manque, c'est toute la branche qui est invisible ;
+                            # s'il ne manque que la feuille, c'est ce fichier-la
+                            # qu'on lui a retire. Deux histoires differentes que
+                            # « introuvable » seul ne raconte pas.
+                            deep = next((str(a) for a in exe.parents
+                                         if a.exists()), "(nothing exists)")
+                            view = "cannot list (%s); deepest existing " \
+                                   "ancestor: %s" % (type(list_err).__name__,
+                                                     deep)
                         detail += ("  || parent dir: " + view
                                    + "  || user=%s LOCALAPPDATA=%s"
                                    % (getpass.getuser(),
                                       os.environ.get("LOCALAPPDATA", "?")))
                     detail += "  || attempts: 3"
                     r.append(_note("render check skipped", detail[:104]))
-                    for k in range(104, min(len(detail), 1100), 104):
+                    for k in range(104, min(len(detail), 1400), 104):
                         r.append(_note("", detail[k:k + 104]))
                     return _report("rendered pages -- headless", r)
                 try:
