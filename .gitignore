@@ -92,7 +92,15 @@ Live/1_Roll/Front_Contract/worksheet.csv
 Live/logs/
 
 # Local convenience launcher and its build artefacts.
-Live/Run pipeline.exe
+#
+# LA REGLE VISE N'IMPORTE QUEL EXECUTABLE, PAS UN NOM.  Elle nommait
+# « Run pipeline.exe ». Le jour ou le logiciel a ete rebaptise
+# trends-research.exe, elle a cesse de mordre et un binaire de 10 Mo est
+# reapparu dans `git status`, pret a partir avec un `git add -A`. Un nom de
+# fichier est un detail qui change ; ce qui ne change pas, c'est qu'aucun
+# executable n'a sa place ici -- il se reconstruit en huit secondes depuis
+# run_gui.pyw, qui est suivi, lui.
+Live/*.exe
 build/
 dist/
 *.spec
