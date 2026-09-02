@@ -1943,21 +1943,45 @@ def verify_render(started: float) -> int:
         try:
             errors, empty, colour, shown = [], [], [], {}
             with sync_playwright() as pw:
-                try:
-                    browser = pw.chromium.launch()
-                except Exception as e:
-                    # LE DIAGNOSTIC N'EST PLUS COUPE A 60 CARACTERES.
-                    # Playwright dit QUEL executable il attend, et c'est la
-                    # seule chose qui distingue « navigateur absent » de
-                    # « version attendue differente de celle installee ». La
-                    # coupe tombait juste avant le chemin : on lisait
-                    # « Executable doesn't exist at C:/Users/336 » et on
-                    # n'apprenait rien de ce qu'il fallait savoir. On le rend
-                    # sur plusieurs lignes plutot qu'en une ligne interminable
-                    # dans un tableau aligne.
-                    detail = " ".join(str(e).split())
+                # TROIS TENTATIVES, PARCE QUE LA PANNE EST INTERMITTENTE.
+                # Le navigateur est installe depuis le 30 aout et le meme
+                # appel reussit d'un lancement a l'autre : ce n'est pas une
+                # absence, c'est un acces qui echoue par moments. Trois
+                # essais espaces coutent quelques secondes le jour ou ca
+                # rate, et rien du tout les autres jours.
+                #
+                # PAS DE REPLI SUR channel="chromium" : essaye et MESURE --
+                # le navigateur complet echoue ici sur « spawn UNKNOWN »
+                # alors que le shell sans tete fonctionne. Le repli aurait
+                # remplace une panne intermittente par une panne franche.
+                browser = None
+                for attempt in range(3):
+                    try:
+                        browser = pw.chromium.launch()
+                        break
+                    except Exception as e:
+                        last = e
+                        time.sleep(2)
+                if browser is None:
+                    # LE DIAGNOSTIC DOIT SE SUFFIRE.  Le message de
+                    # Playwright dit quel executable il veut ; on y ajoute ce
+                    # que Python, lui, voit du meme chemin. Si le fichier est
+                    # la et que Playwright ne le voit pas, la cause est un
+                    # acces refuse et non une installation incomplete -- deux
+                    # remedes opposes, que le message seul ne separe pas.
+                    detail = " ".join(str(last).split())
+                    m = re.search(r"exist at ([A-Za-z]:[^\s]+\.exe)", detail)
+                    if m:
+                        exe = Path(m.group(1))
+                        try:
+                            seen = ("%d bytes" % exe.stat().st_size
+                                    if exe.is_file() else "absent")
+                        except Exception as stat_err:
+                            seen = "unreadable (%s)" % type(stat_err).__name__
+                        detail += "  || Python sees it as: " + seen
+                    detail += "  || attempts: 3"
                     r.append(_note("render check skipped", detail[:104]))
-                    for k in range(104, min(len(detail), 520), 104):
+                    for k in range(104, min(len(detail), 700), 104):
                         r.append(_note("", detail[k:k + 104]))
                     return _report("rendered pages -- headless", r)
                 try:
