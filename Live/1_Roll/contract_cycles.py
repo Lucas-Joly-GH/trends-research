@@ -214,6 +214,24 @@ _F32_SIG = 7
 GAPS = "gaps"
 BAR_COLS = ["Open", "High", "Low", "Close", "Volume", "Open Interest"]
 
+# Le volume et l'open interest sont d'abord publies en provisoire : le volume
+# est revise apres la cloture, et l'open interest n'arrive qu'a la seance
+# suivante -- il vaut donc 0 sur le disque quand la ligne est ecrite le jour
+# meme. Comme une ligne deja presente n'est jamais reecrite, ces chiffres
+# provisoires y restent pour toujours, et la regle de roulement, qui exige
+# `open_interest > 0`, se retrouve sans rien a classer sur les seances
+# recentes. On rouvre donc ces deux colonnes -- et elles seules -- le temps
+# que la seance se decante. Les prix restent ecrits une fois pour toutes :
+# c'est sur eux que le livre est construit, et une revision tardive du
+# fournisseur ne doit pas pouvoir deplacer une position deja prise.
+SETTLE_COLS = ("Volume", "Open Interest")
+SETTLE_DAYS = 21
+
+
+def settle_cutoff(days: int = SETTLE_DAYS) -> str:
+    """La date avant laquelle une seance est consideree comme decantee."""
+    return (_dt.date.today() - _dt.timedelta(days=days)).strftime("%Y%m%d")
+
 
 def _widen(a, sig: int = _F32_SIG):
     import numpy as np
@@ -253,9 +271,11 @@ def fetch_bars(nd, symbol: str, tries: int = 3):
     return ymd, cols
 
 
-def append_bars(path: Path, fetched, *, dry: bool = False) -> dict:
+def append_bars(path: Path, fetched, *, dry: bool = False,
+                settle_from: str = "") -> dict:
     ymd, cols = fetched
-    rep = {"added": 0, "gaps": 0, "conflicts": [], "created": False}
+    rep = {"added": 0, "gaps": 0, "conflicts": [], "created": False,
+           "settled": 0}
     cur = None
     have = {}
     if path.exists():
@@ -266,17 +286,24 @@ def append_bars(path: Path, fetched, *, dry: bool = False) -> dict:
 
     last = max(have) if have else ""
     new_rows = []
+    fixes: dict[str, dict] = {}
     for i, d in enumerate(ymd):
         if d in have:
+            fresh = bool(settle_from) and d >= settle_from
             for c in BAR_COLS:
                 if c not in cols:
                     continue
                 prev = have[d].get(c)
+                new = float(cols[c][i])
+                if fresh and c in SETTLE_COLS:
+                    # seance encore fraiche : le fournisseur fait foi
+                    if prev in (None, "") or abs(float(prev) - new) > 1e-6:
+                        fixes.setdefault(d, {})[c] = new
+                    continue
                 if prev in (None, ""):
                     continue
-                if abs(float(prev) - float(cols[c][i])) > 1e-6:
-                    rep["conflicts"].append(
-                        (d, c, float(prev), float(cols[c][i])))
+                if abs(float(prev) - new) > 1e-6:
+                    rep["conflicts"].append((d, c, float(prev), new))
         else:
             new_rows.append({"Date": d,
                              **{c: float(cols[c][i]) for c in BAR_COLS
@@ -284,14 +311,21 @@ def append_bars(path: Path, fetched, *, dry: bool = False) -> dict:
             if d < last:
                 rep["gaps"] += 1
     rep["added"] = len(new_rows)
-    if new_rows and not dry:
-        add = pl.DataFrame(new_rows)
+    rep["settled"] = sum(len(v) for v in fixes.values())
+    if (new_rows or fixes) and not dry:
         if cur is not None:
-            cur = cur.with_columns([pl.col(c).cast(pl.Float64, strict=False)
+            out = cur.with_columns([pl.col(c).cast(pl.Float64, strict=False)
                                     for c in cur.columns if c != "Date"])
-            out = pl.concat([cur, add.select(cur.columns)], how="vertical")
+            if fixes:
+                rows = out.to_dicts()
+                for r in rows:
+                    r.update(fixes.get(r["Date"], {}))
+                out = pl.DataFrame(rows, schema=out.schema)
+            if new_rows:
+                add = pl.DataFrame(new_rows).select(out.columns)
+                out = pl.concat([out, add], how="vertical")
         else:
-            out = add
+            out = pl.DataFrame(new_rows)
         out.sort("Date").write_csv(path)
     return rep
 
@@ -305,12 +339,16 @@ def refresh_panel(nd, fc, instruments: list[str], *, full: bool = False,
                 for r in t.iter_rows(named=True)}
 
     tot = {"fetched": 0, "skipped": 0, "added": 0, "gaps": 0, "created": 0,
-           "empty": 0, "conflicts": 0, "failed": 0}
+           "empty": 0, "conflicts": 0, "failed": 0, "settled": 0}
     detail = {}
+    cutoff = settle_cutoff()
     hdr = (f"{'inst':<8}{'listed':>8}{'skip':>7}{'fetch':>7}{'new bars':>10}"
-           f"{'new files':>11}{'conflict':>10}{'sec':>7}")
+           f"{'new files':>11}{'settled':>9}{'conflict':>10}{'sec':>7}")
     print(f"\nSTAGE 1  panel refresh -> {fc.CONTRACTS}"
-          f"{'   [DRY RUN]' if dry else ''}\n\n{hdr}\n" + "-" * len(hdr))
+          f"{'   [DRY RUN]' if dry else ''}\n"
+          f"  volume et open interest rouverts depuis le {cutoff}"
+          f" ({SETTLE_DAYS} jours) ; prix ecrits une seule fois"
+          f"\n\n{hdr}\n" + "-" * len(hdr))
 
     for inst in instruments:
         t0 = time.time()
@@ -323,7 +361,7 @@ def refresh_panel(nd, fc, instruments: list[str], *, full: bool = False,
             tot["failed"] += 1
             continue
         r = {k: 0 for k in ("skipped", "fetched", "added", "gaps",
-                            "created", "empty", "conflicts")}
+                            "created", "empty", "conflicts", "settled")}
         for sym in sorted(syms):
             path = d / f"{sym}.csv"
             lt = meta.get(sym) or ""
@@ -345,11 +383,12 @@ def refresh_panel(nd, fc, instruments: list[str], *, full: bool = False,
             if got is None:
                 r["empty"] += 1
                 continue
-            rep = append_bars(path, got, dry=dry)
+            rep = append_bars(path, got, dry=dry, settle_from=cutoff)
             r["added"] += rep["added"]
             r["gaps"] += rep["gaps"]
             r["created"] += int(rep["created"])
             r["conflicts"] += len(rep["conflicts"])
+            r["settled"] += rep["settled"]
             if rep["conflicts"]:
                 detail.setdefault(inst, []).extend(
                     (sym,) + tuple(c) for c in rep["conflicts"][:3])
@@ -357,8 +396,8 @@ def refresh_panel(nd, fc, instruments: list[str], *, full: bool = False,
             tot[k] += r[k]
         flag = "  <<<" if r["conflicts"] else ""
         print(f"{inst:<8}{len(syms):>8}{r['skipped']:>7}{r['fetched']:>7}"
-              f"{r['added']:>10}{r['created']:>11}{r['conflicts']:>10}"
-              f"{time.time() - t0:>7.0f}{flag}")
+              f"{r['added']:>10}{r['created']:>11}{r['settled']:>9}"
+              f"{r['conflicts']:>10}{time.time() - t0:>7.0f}{flag}")
         sys.stdout.flush()
 
     print("-" * len(hdr))
@@ -373,9 +412,14 @@ def refresh_panel(nd, fc, instruments: list[str], *, full: bool = False,
         print(f"  {tot['empty']} contracts the vendor returned nothing for")
     if tot["failed"]:
         print(f"  {tot['failed']} failure(s)")
+    if tot["settled"]:
+        print(f"  {tot['settled']:,} volume / open interest cell(s) refreshed "
+              f"on sessions since {cutoff} -- those two settle after the "
+              f"close, so the panel takes the vendor's later word")
     if tot["conflicts"]:
         print(f"\n  {tot['conflicts']} CONFLICT(S) -- the vendor disagrees with "
-              f"bars already on disk.  NOT applied.  Sample:")
+              f"bars already on disk, on a PRICE or on a session already "
+              f"settled.  NOT applied.  Sample:")
         for inst, rows in list(detail.items())[:5]:
             for sym, dt, col, old, new in rows[:3]:
                 print(f"     {inst:<6}{sym:<12}{dt}  {col:<14}"
