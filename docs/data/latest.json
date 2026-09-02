@@ -4,21 +4,21 @@
   "window_start": "2026-01-02",
   "sessions": 173,
   "equity_start": 100000000.0,
-  "equity_end": 110319177.94,
-  "net_ann_ret": 0.112374,
-  "net_cagr": 0.156415,
-  "cagr_trading": 0.115098,
-  "window_ret_trading": 0.076652,
+  "equity_end": 110338677.94,
+  "net_ann_ret": 0.112638,
+  "net_cagr": 0.156717,
+  "cagr_trading": 0.11539,
+  "window_ret_trading": 0.076847,
   "window_ret_interest": 0.02654,
-  "net_ann_vol": 0.082523,
-  "net_sharpe": 1.3617,
+  "net_ann_vol": 0.082558,
+  "net_sharpe": 1.3644,
   "max_drawdown": -0.056022,
-  "cost_ann": 0.015758,
-  "cost_window_USD": 1133130.49,
+  "cost_ann": 0.015754,
+  "cost_window_USD": 1132830.49,
   "interest_ann": 0.036402,
   "n_positions": 61,
-  "updated_at": "2026-09-02T05:24:42+00:00",
-  "generated_at": "2026-09-02T05:24:42+00:00"
+  "updated_at": "2026-09-02T21:58:56+00:00",
+  "generated_at": "2026-09-02T21:58:57+00:00"
  },
  "executed": [
   {
@@ -53,28 +53,6 @@
    "decision_close": 1.16225,
    "trading_cost_USD": 201.25,
    "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "BRN",
-   "contract": "BRN-2026Z",
-   "action": "BUY",
-   "quantity": 20.0,
-   "kind": "ROLL_IN",
-   "fill_open": 88.63,
-   "decision_close": 88.37,
-   "trading_cost_USD": 150.0,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "BRN",
-   "contract": "BRN-2026X",
-   "action": "SELL",
-   "quantity": 20.0,
-   "kind": "ROLL_OUT",
-   "fill_open": 88.63,
-   "decision_close": 88.37,
-   "trading_cost_USD": 150.0,
-   "realised_pnl_USD": -20180.00000000039
   },
   {
    "instrument": "BTC",
@@ -390,6 +368,22 @@
    "quantity": 12.0,
    "kind": "RESIZE",
    "decision_close": 1.3513
+  },
+  {
+   "instrument": "BRN",
+   "contract": "BRN-2026Z",
+   "action": "BUY",
+   "quantity": 20.0,
+   "kind": "ROLL_IN",
+   "decision_close": 91.57
+  },
+  {
+   "instrument": "BRN",
+   "contract": "BRN-2026X",
+   "action": "SELL",
+   "quantity": 20.0,
+   "kind": "ROLL_OUT",
+   "decision_close": 91.57
   },
   {
    "instrument": "CGB",
