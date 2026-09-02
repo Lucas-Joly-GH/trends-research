@@ -1325,24 +1325,34 @@ def verify_bookkeeping(started: float) -> int:
     P = pl.read_parquet(pend_f.with_suffix(".parquet"))
     X = pl.read_parquet(exe_f.with_suffix(".parquet"))
     asof = dec.max()
-    # Un roulement produit DEUX jambes sur le meme instrument, sortante et
-    # entrante, sur deux contrats differents. Exiger un ordre par instrument
-    # faisait echouer la verification chaque jour de roulement.
-    extra = []
-    if "kind" in P.columns:
-        for inst, grp in P.group_by("instrument"):
-            name = inst[0] if isinstance(inst, tuple) else inst
-            if grp.height == 1:
-                continue
-            kinds = set(grp.get_column("kind").to_list())
-            legs = grp.get_column("contract").n_unique()
-            if not (grp.height == 2 and legs == 2
-                    and kinds == {"ROLL_IN", "ROLL_OUT"}):
-                extra.append(str(name))
-    else:
-        extra = ["(colonne kind absente)"] if (
-            P.height != P.get_column("instrument").n_unique()) else []
-    rolls = P.height - P.get_column("instrument").n_unique()
+    # UN ROULEMENT PRODUIT DEUX JAMBES sur le meme instrument -- sortante et
+    # entrante, sur deux contrats differents -- et « un ordre par instrument »
+    # est donc faux le jour du roulement.
+    #
+    # LA REGLE EST ECRITE UNE SEULE FOIS PARCE QUE LES DEUX COPIES ONT DERIVE.
+    # Elle avait ete apprise a `pending` et pas a `executed` : le carnet a
+    # roule BRN le 2026-09-01, les deux jambes se sont remplies, et la
+    # verification a bloque la publication d'une seance parfaitement saine.
+    # Une regle vraie des deux cotes qui n'existe qu'a un endroit ne peut plus
+    # etre corrigee a moitie.
+    def roll_aware(df, what):
+        """(anomalies, jambes de roulement) pour un carnet d'ordres."""
+        bad = []
+        if "kind" in df.columns:
+            for inst, grp in df.group_by("instrument"):
+                name = inst[0] if isinstance(inst, tuple) else inst
+                if grp.height == 1:
+                    continue
+                kinds = set(grp.get_column("kind").to_list())
+                legs = grp.get_column("contract").n_unique()
+                if not (grp.height == 2 and legs == 2
+                        and kinds == {"ROLL_IN", "ROLL_OUT"}):
+                    bad.append(str(name))
+        elif df.height != df.get_column("instrument").n_unique():
+            bad = [f"({what}: colonne kind absente)"]
+        return bad, df.height - df.get_column("instrument").n_unique()
+
+    extra, rolls = roll_aware(P, "pending")
     ok_p = (not extra
             and bool((P.get_column("decision_date") <= asof).all())
             and bool((P.get_column("execute_at").is_null()
@@ -1351,11 +1361,13 @@ def verify_bookkeeping(started: float) -> int:
                  f"{P.height} order(s) for the next open"
                  + (f", dont {rolls} jambe(s) de roulement" if rolls else "")
                  + (f"   ANORMAL: {', '.join(extra[:5])}" if extra else "")))
+    xextra, xrolls = roll_aware(X, "executed")
     ok_x = (not X.height) or (
-        bool((X.get_column("execute_at") == asof).all())
-        and X.height == X.get_column("instrument").n_unique())
-    r.append(_ok("executed: filled at this session's open", ok_x,
-                 f"{X.height} order(s) at the {asof} open"))
+        bool((X.get_column("execute_at") == asof).all()) and not xextra)
+    r.append(_ok("executed: one per instrument, or a roll's two legs", ok_x,
+                 f"{X.height} order(s) at the {asof} open"
+                 + (f", dont {xrolls} jambe(s) de roulement" if xrolls else "")
+                 + (f"   ANORMAL: {', '.join(xextra[:5])}" if xextra else "")))
     both = (set(zip(P.get_column("instrument"), P.get_column("decision_date")))
             & set(zip(X.get_column("instrument"), X.get_column("decision_date"))))
     r.append(_ok("pending and executed are disjoint", not both,
