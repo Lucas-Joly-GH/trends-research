@@ -1979,9 +1979,35 @@ def verify_render(started: float) -> int:
                         except Exception as stat_err:
                             seen = "unreadable (%s)" % type(stat_err).__name__
                         detail += "  || Python sees it as: " + seen
+                        # QUI REGARDE, ET AVEC QUELLE VUE.  Le fichier est sur
+                        # le disque, inchange depuis son installation, et ce
+                        # processus-ci le dit absent. Sous Windows, `is_file()`
+                        # rend False aussi bien quand le fichier manque que
+                        # quand le stat est REFUSE -- deux causes opposees que
+                        # rien ne separe. On demande donc au processus ce qu'il
+                        # voit du dossier parent : s'il n'en voit rien non plus,
+                        # c'est un probleme d'acces ; s'il en voit le contenu
+                        # mais pas ce fichier, c'est bien une absence.
+                        # NI `os` NI `getpass` NE SONT IMPORTES EN TETE de ce
+                        # fichier -- comme `pathlib` ne l'etait pas. Ce bloc
+                        # n'a lieu que le jour de la panne, si bien qu'une
+                        # importation manquante y dort sans jamais se
+                        # manifester : c'est deja arrive une fois ici meme.
+                        import getpass
+                        import os
+                        try:
+                            kids = sorted(p.name for p in exe.parent.iterdir())
+                            view = "%d entries: %s" % (
+                                len(kids), ", ".join(kids)[:70])
+                        except Exception as list_err:
+                            view = "cannot list (%s)" % type(list_err).__name__
+                        detail += ("  || parent dir: " + view
+                                   + "  || user=%s LOCALAPPDATA=%s"
+                                   % (getpass.getuser(),
+                                      os.environ.get("LOCALAPPDATA", "?")))
                     detail += "  || attempts: 3"
                     r.append(_note("render check skipped", detail[:104]))
-                    for k in range(104, min(len(detail), 700), 104):
+                    for k in range(104, min(len(detail), 1100), 104):
                         r.append(_note("", detail[k:k + 104]))
                     return _report("rendered pages -- headless", r)
                 try:
