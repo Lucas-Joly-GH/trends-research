@@ -1917,6 +1917,28 @@ def verify_render(started: float) -> int:
 
     DOCS = HERE.parent / "docs"
     r: list[tuple[bool, str, str]] = []
+
+    # LES NAVIGATEURS SONT CHERCHES SOUS LE DEPOT, PAS DANS LE PROFIL.
+    #
+    # Par defaut Playwright les lit dans %LOCALAPPDATA%\\ms-playwright. Ce
+    # dossier existe, n'est pas une jonction, et son parent est parfaitement
+    # visible -- pourtant le processus du pipeline le declarait introuvable
+    # une fois sur deux, `FileNotFoundError` a l'appui, pendant qu'un autre
+    # processus du meme utilisateur listait son contenu a la seconde pres.
+    # Neuf executions sur dix-sept ont ainsi publie sans que leurs pages
+    # aient ete ouvertes une seule fois.
+    #
+    # LA CAUSE N'EST PAS ELUCIDEE, et c'est precisement pourquoi on cesse
+    # d'en dependre plutot que de la contourner : le repertoire vit
+    # maintenant a cote du code, hors du profil utilisateur, la ou n'importe
+    # qui peut verifier sa presence d'un coup d'oeil. On ne l'impose que
+    # s'il existe reellement, pour qu'une machine neuve retombe sur le
+    # comportement par defaut au lieu de chercher un dossier absent.
+    import os
+    _browsers = HERE / ".playwright"
+    if _browsers.is_dir():
+        os.environ["PLAYWRIGHT_BROWSERS_PATH"] = str(_browsers)
+
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:

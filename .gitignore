@@ -96,3 +96,11 @@ Live/Run pipeline.exe
 build/
 dist/
 *.spec
+
+# LES NAVIGATEURS DE PLAYWRIGHT, HORS DU PROFIL UTILISATEUR.  703 Mo, et
+# jamais commites. Ils vivaient dans %LOCALAPPDATA%\ms-playwright, que le
+# processus du pipeline declarait introuvable un jour sur deux -- dossier
+# bien present sur le disque, parent visible, aucune jonction, et pourtant
+# « FileNotFoundError ». Faute d'explication, on cesse d'en dependre : ici
+# le chemin est sous le depot, hors du profil, et se verifie a l'oeil.
+/Live/.playwright/
