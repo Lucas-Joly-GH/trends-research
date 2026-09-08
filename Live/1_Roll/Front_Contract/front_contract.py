@@ -43,6 +43,7 @@ BAD_SESSIONS = {
     )
 }
 
+SETTLE_CD = 7          # la fenetre ou volume et OI sont encore provisoires
 BV3_SESSIONS = 3
 AUTO_ROLL_CD = 5
 BEST_VOL_MIN_CD = 5
@@ -118,6 +119,42 @@ def load(inst: str) -> pl.DataFrame:
             continue
         d = d.filter(~((pl.col("date") == _date.fromisoformat(dt))
                        & (pl.col("symbol") == sym)))
+
+    # UN VOLUME PROVISOIRE VAUT ZERO, ET ZERO SORT LE CONTRAT DU SCRUTIN.
+    #
+    # `best_v` ne retient que les contrats dont le volume est STRICTEMENT
+    # positif. Une seance ou le fournisseur n'a pas encore publie le volume
+    # arrive donc en zero, le contrat sort du vote, et le suivant devient
+    # « le plus echange » sans avoir rien echange de plus. Le 7 septembre 2026
+    # -- Labor Day, CME ferme, ICE ouvert -- le Brent de novembre est passe de
+    # 360 646 lots a zero et le carnet a roule sur decembre, alors que
+    # novembre le dominait encore en volume ET en position ouverte.
+    #
+    # LE REPORT EST DELIBEREMENT ETROIT.  Il faut les DEUX compteurs a zero
+    # -- une vraie seance sans echange garde son open interest -- un cours
+    # valide, et du volume la seance precedente. Un seul report : deux zeros
+    # de suite, c'est un contrat qui meurt, et il doit mourir.
+    #
+    # ET SEULEMENT AU BORD DES DONNEES.  Premiere version : le report
+    # s'appliquait partout, et la comparaison sur les soixante-trois carnets a
+    # renvoye trente-sept decisions changees -- FGBL9 en 2005, FGBM9, FGBS9,
+    # SB en 2001. Un zero de 2005 est un zero REGLE : il a ete publie, corrige
+    # s'il devait l'etre, et il fait partie des series depuis vingt ans.
+    # Seul un zero non encore regle est suspect, et ceux-la vivent au bord du
+    # panneau. La regle ne s'applique donc qu'aux dernieres seances lues.
+    edge = d.get_column("date").max()
+    d = d.sort(["symbol", "date"])
+    d = d.with_columns(
+        pl.col("volume").shift(1).over("symbol").alias("_pv"),
+        pl.col("open_interest").shift(1).over("symbol").alias("_po"))
+    stale = ((pl.col("volume") == 0.0) & (pl.col("open_interest") == 0.0)
+             & pl.col("close").is_not_null() & (pl.col("_pv") > 0.0)
+             & (pl.col("date") >= pl.lit(edge) - pl.duration(days=SETTLE_CD)))
+    d = d.with_columns(
+        pl.when(stale).then(pl.col("_pv")).otherwise(pl.col("volume"))
+          .alias("volume"),
+        pl.when(stale).then(pl.col("_po")).otherwise(pl.col("open_interest"))
+          .alias("open_interest")).drop(["_pv", "_po"])
     return d
 
 
