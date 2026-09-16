@@ -1,354 +1,36 @@
 {
  "meta": {
-  "as_of": "2026-09-14",
+  "as_of": "2026-09-15",
   "window_start": "2026-01-02",
-  "sessions": 182,
+  "sessions": 183,
   "equity_start": 100000000.0,
-  "equity_end": 113251046.15,
-  "net_ann_ret": 0.142113,
-  "net_cagr": 0.191284,
-  "cagr_trading": 0.148552,
-  "window_ret_trading": 0.104426,
-  "window_ret_interest": 0.028084,
-  "net_ann_vol": 0.08454,
-  "net_sharpe": 1.681,
+  "equity_end": 114965375.6,
+  "net_ann_ret": 0.162358,
+  "net_cagr": 0.215424,
+  "cagr_trading": 0.171881,
+  "window_ret_trading": 0.121444,
+  "window_ret_interest": 0.028209,
+  "net_ann_vol": 0.08602,
+  "net_sharpe": 1.8875,
   "max_drawdown": -0.056022,
-  "cost_ann": 0.016193,
-  "cost_window_USD": 1229697.75,
-  "interest_ann": 0.036554,
-  "n_positions": 61,
-  "updated_at": "2026-09-15T15:40:53+00:00",
-  "generated_at": "2026-09-15T15:40:53+00:00"
+  "cost_ann": 0.016226,
+  "cost_window_USD": 1239531.41,
+  "interest_ann": 0.036509,
+  "n_positions": 62,
+  "updated_at": "2026-09-16T15:05:00+00:00",
+  "generated_at": "2026-09-16T15:05:00+00:00"
  },
  "executed": [
   {
    "instrument": "6B",
    "contract": "6B-2026Z",
    "action": "SELL",
-   "quantity": 38.0,
-   "kind": "RESIZE",
-   "fill_open": 1.3526,
-   "decision_close": 1.3528,
-   "trading_cost_USD": 213.75,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "6E",
-   "contract": "6E-2026Z",
-   "action": "BUY",
-   "quantity": 9.0,
-   "kind": "RESIZE",
-   "fill_open": 1.16395,
-   "decision_close": 1.1638,
-   "trading_cost_USD": 78.75,
-   "realised_pnl_USD": 7294.536128456769
-  },
-  {
-   "instrument": "6J",
-   "contract": "6J-2026Z",
-   "action": "SELL",
    "quantity": 15.0,
    "kind": "RESIZE",
-   "fill_open": 0.65595,
-   "decision_close": 0.65535,
-   "trading_cost_USD": 131.25,
+   "fill_open": 1.3501,
+   "decision_close": 1.3515,
+   "trading_cost_USD": 84.375,
    "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "6N",
-   "contract": "6N-2026Z",
-   "action": "SELL",
-   "quantity": 31.0,
-   "kind": "RESIZE",
-   "fill_open": 0.5822,
-   "decision_close": 0.5829,
-   "trading_cost_USD": 232.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "CGB",
-   "contract": "CGB-2026Z",
-   "action": "SELL",
-   "quantity": 12.0,
-   "kind": "RESIZE",
-   "fill_open": 115.69,
-   "decision_close": 115.51,
-   "trading_cost_USD": 73.56383218591672,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "CL",
-   "contract": "CL-2026V",
-   "action": "BUY",
-   "quantity": 3.0,
-   "kind": "RESIZE",
-   "fill_open": 102.25,
-   "decision_close": 100.05,
-   "trading_cost_USD": 22.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "CT",
-   "contract": "CT-2026Z",
-   "action": "BUY",
-   "quantity": 1.0,
-   "kind": "RESIZE",
-   "fill_open": 86.2,
-   "decision_close": 86.06,
-   "trading_cost_USD": 5.0,
-   "realised_pnl_USD": 211.832433973622
-  },
-  {
-   "instrument": "DX",
-   "contract": "DX-2026Z",
-   "action": "SELL",
-   "quantity": 3.0,
-   "kind": "RESIZE",
-   "fill_open": 98.85,
-   "decision_close": 98.841,
-   "trading_cost_USD": 9.0,
-   "realised_pnl_USD": 1687.8260869564901
-  },
-  {
-   "instrument": "ES",
-   "contract": "ES-2026U",
-   "action": "SELL",
-   "quantity": 1.0,
-   "kind": "RESIZE",
-   "fill_open": 7680.0,
-   "decision_close": 7659.5,
-   "trading_cost_USD": 8.75,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "EUA",
-   "contract": "EUA-2026Z",
-   "action": "BUY",
-   "quantity": 1.0,
-   "kind": "RESIZE",
-   "fill_open": 85.66,
-   "decision_close": 85.52,
-   "trading_cost_USD": 14.493272460545109,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "FDAX9",
-   "contract": "FDAX9-2026U",
-   "action": "BUY",
-   "quantity": 1.0,
-   "kind": "RESIZE",
-   "fill_open": 25680.0,
-   "decision_close": 25587.0,
-   "trading_cost_USD": 10.145290722381576,
-   "realised_pnl_USD": 14889.817946674839
-  },
-  {
-   "instrument": "FGBL9",
-   "contract": "FGBL9-2026Z",
-   "action": "SELL",
-   "quantity": 23.0,
-   "kind": "RESIZE",
-   "fill_open": 120.63,
-   "decision_close": 120.53,
-   "trading_cost_USD": 200.0071599555225,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "GC",
-   "contract": "GC-2026Z",
-   "action": "BUY",
-   "quantity": 1.0,
-   "kind": "RESIZE",
-   "fill_open": 4375.0,
-   "decision_close": 4408.9,
-   "trading_cost_USD": 7.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "HE",
-   "contract": "HE-2026V",
-   "action": "SELL",
-   "quantity": 35.0,
-   "kind": "RESIZE",
-   "fill_open": 81.25,
-   "decision_close": 81.525,
-   "trading_cost_USD": 437.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "HSI",
-   "contract": "HSI-2026U",
-   "action": "BUY",
-   "quantity": 3.0,
-   "kind": "RESIZE",
-   "fill_open": 24810.0,
-   "decision_close": 24799.0,
-   "trading_cost_USD": 17.115384615384617,
-   "realised_pnl_USD": 6354.696158542314
-  },
-  {
-   "instrument": "KC",
-   "contract": "KC-2026Z",
-   "action": "SELL",
-   "quantity": 2.0,
-   "kind": "RESIZE",
-   "fill_open": 283.55,
-   "decision_close": 285.7,
-   "trading_cost_USD": 42.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "LFT9",
-   "contract": "LFT9-2026U",
-   "action": "SELL",
-   "quantity": 5.0,
-   "kind": "RESIZE",
-   "fill_open": 10720.5,
-   "decision_close": 10674.5,
-   "trading_cost_USD": 33.81225277557425,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "NIY",
-   "contract": "NIY-2026Z",
-   "action": "SELL",
-   "quantity": 8.0,
-   "kind": "RESIZE",
-   "fill_open": 63800.0,
-   "decision_close": 64535.0,
-   "trading_cost_USD": 156.1065586017306,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "NQ",
-   "contract": "NQ-2026U",
-   "action": "SELL",
-   "quantity": 3.0,
-   "kind": "RESIZE",
-   "fill_open": 29381.0,
-   "decision_close": 29387.0,
-   "trading_cost_USD": 15.0,
-   "realised_pnl_USD": -5005.0
-  },
-  {
-   "instrument": "RTY",
-   "contract": "RTY-2026U",
-   "action": "SELL",
-   "quantity": 4.0,
-   "kind": "RESIZE",
-   "fill_open": 2911.4,
-   "decision_close": 2904.5,
-   "trading_cost_USD": 20.0,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "SB",
-   "contract": "SB-2027H",
-   "action": "BUY",
-   "quantity": 27.0,
-   "kind": "RESIZE",
-   "fill_open": 19.22,
-   "decision_close": 19.13,
-   "trading_cost_USD": 218.7,
-   "realised_pnl_USD": 20398.2545454546
-  },
-  {
-   "instrument": "SJB",
-   "contract": "SJB-2026Z",
-   "action": "SELL",
-   "quantity": 7.0,
-   "kind": "RESIZE",
-   "fill_open": 125.18,
-   "decision_close": 125.12,
-   "trading_cost_USD": 40.97797163295428,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "VX",
-   "contract": "VX-2026V",
-   "action": "SELL",
-   "quantity": 102.0,
-   "kind": "ROLL_IN",
-   "fill_open": 18.7,
-   "decision_close": 18.3595,
-   "trading_cost_USD": 4080.0,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "VX",
-   "contract": "VX-2026U",
-   "action": "BUY",
-   "quantity": 133.0,
-   "kind": "ROLL_OUT",
-   "fill_open": 18.7,
-   "decision_close": 18.3595,
-   "trading_cost_USD": 5320.0,
-   "realised_pnl_USD": 153208.3000000003
-  },
-  {
-   "instrument": "YAP4",
-   "contract": "YAP4-2026U",
-   "action": "SELL",
-   "quantity": 16.0,
-   "kind": "RESIZE",
-   "fill_open": 8782.0,
-   "decision_close": 8729.0,
-   "trading_cost_USD": 183.6500456425695,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "YXT4",
-   "contract": "YXT4-2026Z",
-   "action": "SELL",
-   "quantity": 112.0,
-   "kind": "RESIZE",
-   "fill_open": 94.59,
-   "decision_close": 94.6,
-   "trading_cost_USD": 381.64775110096474,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "ZL",
-   "contract": "ZL-2026Z",
-   "action": "SELL",
-   "quantity": 16.0,
-   "kind": "RESIZE",
-   "fill_open": 70.03,
-   "decision_close": 69.68,
-   "trading_cost_USD": 88.0,
-   "realised_pnl_USD": -19364.869565217356
-  },
-  {
-   "instrument": "ZM",
-   "contract": "ZM-2026Z",
-   "action": "BUY",
-   "quantity": 9.0,
-   "kind": "RESIZE",
-   "fill_open": 352.9,
-   "decision_close": 352.8,
-   "trading_cost_USD": 67.5,
-   "realised_pnl_USD": 0.0
-  },
-  {
-   "instrument": "ZT",
-   "contract": "ZT-2026Z",
-   "action": "BUY",
-   "quantity": 17.0,
-   "kind": "RESIZE",
-   "fill_open": 102.0703,
-   "decision_close": 102.0625,
-   "trading_cost_USD": 108.885,
-   "realised_pnl_USD": 26558.1253333331
-  }
- ],
- "pending": [
-  {
-   "instrument": "6B",
-   "contract": "6B-2026Z",
-   "action": "SELL",
-   "quantity": 15.0,
-   "kind": "RESIZE",
-   "decision_close": 1.3515
   },
   {
    "instrument": "6E",
@@ -356,7 +38,10 @@
    "action": "SELL",
    "quantity": 83.0,
    "kind": "RESIZE",
-   "decision_close": 1.15985
+   "fill_open": 1.1589,
+   "decision_close": 1.15985,
+   "trading_cost_USD": 726.25,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "6M",
@@ -364,7 +49,10 @@
    "action": "SELL",
    "quantity": 46.0,
    "kind": "RESIZE",
-   "decision_close": 0.05797
+   "fill_open": 0.0579,
+   "decision_close": 0.05797,
+   "trading_cost_USD": 230.0,
+   "realised_pnl_USD": -19962.977777777684
   },
   {
    "instrument": "6N",
@@ -372,7 +60,10 @@
    "action": "SELL",
    "quantity": 25.0,
    "kind": "RESIZE",
-   "decision_close": 0.5801
+   "fill_open": 0.57915,
+   "decision_close": 0.5801,
+   "trading_cost_USD": 187.5,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "CGB",
@@ -380,7 +71,10 @@
    "action": "SELL",
    "quantity": 13.0,
    "kind": "RESIZE",
-   "decision_close": 115.59
+   "fill_open": 115.41,
+   "decision_close": 115.59,
+   "trading_cost_USD": 79.47883344259209,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "CT",
@@ -388,7 +82,10 @@
    "action": "SELL",
    "quantity": 1.0,
    "kind": "RESIZE",
-   "decision_close": 84.55
+   "fill_open": 84.5,
+   "decision_close": 84.55,
+   "trading_cost_USD": 5.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "DX",
@@ -396,7 +93,10 @@
    "action": "BUY",
    "quantity": 121.0,
    "kind": "RESIZE",
-   "decision_close": 99.106
+   "fill_open": 99.22,
+   "decision_close": 99.106,
+   "trading_cost_USD": 363.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "EMD",
@@ -404,7 +104,10 @@
    "action": "SELL",
    "quantity": 12.0,
    "kind": "ROLL_IN",
-   "decision_close": 3709.8
+   "fill_open": 3714.6,
+   "decision_close": 3709.8,
+   "trading_cost_USD": 210.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "EMD",
@@ -412,7 +115,10 @@
    "action": "BUY",
    "quantity": 10.0,
    "kind": "ROLL_OUT",
-   "decision_close": 3709.8
+   "fill_open": 3714.6,
+   "decision_close": 3709.8,
+   "trading_cost_USD": 175.0,
+   "realised_pnl_USD": 59004.00000000003
   },
   {
    "instrument": "ES",
@@ -420,7 +126,10 @@
    "action": "SELL",
    "quantity": 6.0,
    "kind": "ROLL_IN",
-   "decision_close": 7692.75
+   "fill_open": 7699.25,
+   "decision_close": 7692.75,
+   "trading_cost_USD": 52.5,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "ES",
@@ -428,7 +137,10 @@
    "action": "BUY",
    "quantity": 3.0,
    "kind": "ROLL_OUT",
-   "decision_close": 7692.75
+   "fill_open": 7699.25,
+   "decision_close": 7692.75,
+   "trading_cost_USD": 26.25,
+   "realised_pnl_USD": -4162.5
   },
   {
    "instrument": "EUA",
@@ -436,7 +148,10 @@
    "action": "BUY",
    "quantity": 3.0,
    "kind": "RESIZE",
-   "decision_close": 87.99
+   "fill_open": 88.0,
+   "decision_close": 87.99,
+   "trading_cost_USD": 43.25625,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "FDAX9",
@@ -444,7 +159,10 @@
    "action": "SELL",
    "quantity": 3.0,
    "kind": "ROLL_IN",
-   "decision_close": 25700.0
+   "fill_open": 25698.0,
+   "decision_close": 25700.0,
+   "trading_cost_USD": 30.279374999999998,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "FDAX9",
@@ -452,7 +170,10 @@
    "action": "BUY",
    "quantity": 3.0,
    "kind": "ROLL_OUT",
-   "decision_close": 25700.0
+   "fill_open": 25698.0,
+   "decision_close": 25700.0,
+   "trading_cost_USD": 30.279374999999998,
+   "realised_pnl_USD": 44842.61523161204
   },
   {
    "instrument": "FESX9",
@@ -460,7 +181,10 @@
    "action": "SELL",
    "quantity": 60.0,
    "kind": "ROLL_IN",
-   "decision_close": 6296.0
+   "fill_open": 6300.0,
+   "decision_close": 6296.0,
+   "trading_cost_USD": 519.0749999999999,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "FESX9",
@@ -468,7 +192,10 @@
    "action": "BUY",
    "quantity": 29.0,
    "kind": "ROLL_OUT",
-   "decision_close": 6296.0
+   "fill_open": 6300.0,
+   "decision_close": 6296.0,
+   "trading_cost_USD": 250.88625,
+   "realised_pnl_USD": 25558.951146548934
   },
   {
    "instrument": "FGBS9",
@@ -476,7 +203,10 @@
    "action": "BUY",
    "quantity": 133.0,
    "kind": "RESIZE",
-   "decision_close": 104.52
+   "fill_open": 104.515,
+   "decision_close": 104.52,
+   "trading_cost_USD": 767.0775,
+   "realised_pnl_USD": 90368.78360526518
   },
   {
    "instrument": "GAS",
@@ -484,7 +214,10 @@
    "action": "BUY",
    "quantity": 2.0,
    "kind": "RESIZE",
-   "decision_close": 1394.5
+   "fill_open": 1398.25,
+   "decision_close": 1394.5,
+   "trading_cost_USD": 55.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "HE",
@@ -492,7 +225,10 @@
    "action": "SELL",
    "quantity": 21.0,
    "kind": "RESIZE",
-   "decision_close": 79.6
+   "fill_open": 79.5,
+   "decision_close": 79.6,
+   "trading_cost_USD": 262.5,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "HG",
@@ -500,7 +236,10 @@
    "action": "SELL",
    "quantity": 6.0,
    "kind": "RESIZE",
-   "decision_close": 640.45
+   "fill_open": 640.35,
+   "decision_close": 640.45,
+   "trading_cost_USD": 52.5,
+   "realised_pnl_USD": -63314.732142857065
   },
   {
    "instrument": "HSI",
@@ -508,7 +247,10 @@
    "action": "BUY",
    "quantity": 1.0,
    "kind": "RESIZE",
-   "decision_close": 24873.0
+   "fill_open": 24873.0,
+   "decision_close": 24873.0,
+   "trading_cost_USD": 5.705128205128206,
+   "realised_pnl_USD": 2749.642309257694
   },
   {
    "instrument": "LE",
@@ -516,7 +258,10 @@
    "action": "BUY",
    "quantity": 4.0,
    "kind": "RESIZE",
-   "decision_close": 225.15
+   "fill_open": 225.4,
+   "decision_close": 225.15,
+   "trading_cost_USD": 50.0,
+   "realised_pnl_USD": -5504.761904761882
   },
   {
    "instrument": "LEU9",
@@ -524,7 +269,10 @@
    "action": "BUY",
    "quantity": 57.0,
    "kind": "RESIZE",
-   "decision_close": 96.945
+   "fill_open": 96.95,
+   "decision_close": 96.945,
+   "trading_cost_USD": 575.308125,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "LFT9",
@@ -532,7 +280,10 @@
    "action": "SELL",
    "quantity": 35.0,
    "kind": "ROLL_IN",
-   "decision_close": 10763.5
+   "fill_open": 10763.0,
+   "decision_close": 10763.5,
+   "trading_cost_USD": 235.9,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "LFT9",
@@ -540,7 +291,10 @@
    "action": "BUY",
    "quantity": 45.0,
    "kind": "ROLL_OUT",
-   "decision_close": 10763.5
+   "fill_open": 10763.0,
+   "decision_close": 10763.5,
+   "trading_cost_USD": 303.3,
+   "realised_pnl_USD": 24785.070271552853
   },
   {
    "instrument": "LLG",
@@ -548,7 +302,10 @@
    "action": "SELL",
    "quantity": 8.0,
    "kind": "RESIZE",
-   "decision_close": 84.08
+   "fill_open": 84.35,
+   "decision_close": 84.08,
+   "trading_cost_USD": 80.88000000000001,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "NIY",
@@ -556,7 +313,10 @@
    "action": "BUY",
    "quantity": 10.0,
    "kind": "RESIZE",
-   "decision_close": 63120.0
+   "fill_open": 63195.0,
+   "decision_close": 63120.0,
+   "trading_cost_USD": 193.87499999999997,
+   "realised_pnl_USD": 2138.2889208989786
   },
   {
    "instrument": "NQ",
@@ -564,7 +324,10 @@
    "action": "BUY",
    "quantity": 1.0,
    "kind": "ROLL_OUT",
-   "decision_close": 29449.5
+   "fill_open": 29488.5,
+   "decision_close": 29449.5,
+   "trading_cost_USD": 5.0,
+   "realised_pnl_USD": -5785.0
   },
   {
    "instrument": "PA",
@@ -572,7 +335,10 @@
    "action": "BUY",
    "quantity": 1.0,
    "kind": "RESIZE",
-   "decision_close": 1307.7
+   "fill_open": 1297.5,
+   "decision_close": 1307.7,
+   "trading_cost_USD": 17.5,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "PL",
@@ -580,7 +346,10 @@
    "action": "BUY",
    "quantity": 2.0,
    "kind": "RESIZE",
-   "decision_close": 1779.8
+   "fill_open": 1767.6,
+   "decision_close": 1779.8,
+   "trading_cost_USD": 15.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "RS",
@@ -588,7 +357,10 @@
    "action": "SELL",
    "quantity": 33.0,
    "kind": "RESIZE",
-   "decision_close": 823.0
+   "fill_open": 822.2,
+   "decision_close": 823.0,
+   "trading_cost_USD": 154.28244138856112,
+   "realised_pnl_USD": 12852.8499146023
   },
   {
    "instrument": "RTY",
@@ -596,7 +368,10 @@
    "action": "SELL",
    "quantity": 21.0,
    "kind": "ROLL_IN",
-   "decision_close": 2916.2
+   "fill_open": 2917.2,
+   "decision_close": 2916.2,
+   "trading_cost_USD": 105.0,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "RTY",
@@ -604,7 +379,10 @@
    "action": "BUY",
    "quantity": 37.0,
    "kind": "ROLL_OUT",
-   "decision_close": 2916.2
+   "fill_open": 2917.2,
+   "decision_close": 2916.2,
+   "trading_cost_USD": 185.0,
+   "realised_pnl_USD": 115019.1655677657
   },
   {
    "instrument": "SB",
@@ -612,7 +390,10 @@
    "action": "BUY",
    "quantity": 10.0,
    "kind": "RESIZE",
-   "decision_close": 19.06
+   "fill_open": 19.1,
+   "decision_close": 19.06,
+   "trading_cost_USD": 81.0,
+   "realised_pnl_USD": 9022.396270396266
   },
   {
    "instrument": "SJB",
@@ -620,7 +401,10 @@
    "action": "SELL",
    "quantity": 5.0,
    "kind": "RESIZE",
-   "decision_close": 125.02
+   "fill_open": 125.06,
+   "decision_close": 125.02,
+   "trading_cost_USD": 29.081249999999994,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "SO3",
@@ -628,7 +412,10 @@
    "action": "SELL",
    "quantity": 114.0,
    "kind": "RESIZE",
-   "decision_close": 95.655
+   "fill_open": 95.67,
+   "decision_close": 95.655,
+   "trading_cost_USD": 864.4050000000001,
+   "realised_pnl_USD": 10482.172812393821
   },
   {
    "instrument": "SR3",
@@ -636,7 +423,10 @@
    "action": "SELL",
    "quantity": 78.0,
    "kind": "RESIZE",
-   "decision_close": 95.755
+   "fill_open": 95.745,
+   "decision_close": 95.755,
+   "trading_cost_USD": 438.75,
+   "realised_pnl_USD": -12674.999999999554
   },
   {
    "instrument": "SXF",
@@ -644,7 +434,10 @@
    "action": "BUY",
    "quantity": 17.0,
    "kind": "ROLL_IN",
-   "decision_close": 2105.3
+   "fill_open": 2105.3,
+   "decision_close": 2105.3,
+   "trading_cost_USD": 287.3465516770637,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "SXF",
@@ -652,7 +445,10 @@
    "action": "SELL",
    "quantity": 1.0,
    "kind": "ROLL_OUT",
-   "decision_close": 2105.3
+   "fill_open": 2105.3,
+   "decision_close": 2105.3,
+   "trading_cost_USD": 16.902738333944924,
+   "realised_pnl_USD": 4029.0836601609008
   },
   {
    "instrument": "YAP4",
@@ -660,7 +456,10 @@
    "action": "SELL",
    "quantity": 45.0,
    "kind": "ROLL_IN",
-   "decision_close": 8804.0
+   "fill_open": 8793.0,
+   "decision_close": 8804.0,
+   "trading_cost_USD": 512.568,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "YAP4",
@@ -668,7 +467,10 @@
    "action": "BUY",
    "quantity": 61.0,
    "kind": "ROLL_OUT",
-   "decision_close": 8804.0
+   "fill_open": 8793.0,
+   "decision_close": 8804.0,
+   "trading_cost_USD": 694.8144,
+   "realised_pnl_USD": 92702.81658294096
   },
   {
    "instrument": "YXT4",
@@ -676,7 +478,10 @@
    "action": "SELL",
    "quantity": 110.0,
    "kind": "RESIZE",
-   "decision_close": 94.635
+   "fill_open": 94.61,
+   "decision_close": 94.635,
+   "trading_cost_USD": 371.96774999999997,
+   "realised_pnl_USD": 0.0
   },
   {
    "instrument": "ZB",
@@ -684,7 +489,10 @@
    "action": "BUY",
    "quantity": 19.0,
    "kind": "RESIZE",
-   "decision_close": 107.0312
+   "fill_open": 106.7188,
+   "decision_close": 107.0312,
+   "trading_cost_USD": 344.375,
+   "realised_pnl_USD": 47353.982978723376
   },
   {
    "instrument": "ZL",
@@ -692,7 +500,10 @@
    "action": "SELL",
    "quantity": 6.0,
    "kind": "RESIZE",
-   "decision_close": 70.19
+   "fill_open": 70.04,
+   "decision_close": 70.19,
+   "trading_cost_USD": 33.0,
+   "realised_pnl_USD": -7642.397515527912
   },
   {
    "instrument": "ZM",
@@ -700,7 +511,196 @@
    "action": "BUY",
    "quantity": 11.0,
    "kind": "RESIZE",
-   "decision_close": 356.2
+   "fill_open": 356.5,
+   "decision_close": 356.2,
+   "trading_cost_USD": 82.5,
+   "realised_pnl_USD": 0.0
+  }
+ ],
+ "pending": [
+  {
+   "instrument": "6B",
+   "contract": "6B-2026Z",
+   "action": "SELL",
+   "quantity": 40.0,
+   "kind": "RESIZE",
+   "decision_close": 1.3483
+  },
+  {
+   "instrument": "6E",
+   "contract": "6E-2026Z",
+   "action": "SELL",
+   "quantity": 48.0,
+   "kind": "RESIZE",
+   "decision_close": 1.15845
+  },
+  {
+   "instrument": "6N",
+   "contract": "6N-2026Z",
+   "action": "SELL",
+   "quantity": 31.0,
+   "kind": "RESIZE",
+   "decision_close": 0.5773
+  },
+  {
+   "instrument": "6S",
+   "contract": "6S-2026Z",
+   "action": "SELL",
+   "quantity": 8.0,
+   "kind": "RESIZE",
+   "decision_close": 1.23445
+  },
+  {
+   "instrument": "CGB",
+   "contract": "CGB-2026Z",
+   "action": "SELL",
+   "quantity": 13.0,
+   "kind": "RESIZE",
+   "decision_close": 115.48
+  },
+  {
+   "instrument": "DX",
+   "contract": "DX-2026Z",
+   "action": "SELL",
+   "quantity": 61.0,
+   "kind": "RESIZE",
+   "decision_close": 99.341
+  },
+  {
+   "instrument": "ES",
+   "contract": "ES-2026Z",
+   "action": "SELL",
+   "quantity": 2.0,
+   "kind": "RESIZE",
+   "decision_close": 7656.0
+  },
+  {
+   "instrument": "EUA",
+   "contract": "EUA-2026Z",
+   "action": "SELL",
+   "quantity": 3.0,
+   "kind": "RESIZE",
+   "decision_close": 85.61
+  },
+  {
+   "instrument": "FESX9",
+   "contract": "FESX9-2026Z",
+   "action": "BUY",
+   "quantity": 46.0,
+   "kind": "RESIZE",
+   "decision_close": 6271.0
+  },
+  {
+   "instrument": "HG",
+   "contract": "HG-2026Z",
+   "action": "SELL",
+   "quantity": 3.0,
+   "kind": "RESIZE",
+   "decision_close": 644.35
+  },
+  {
+   "instrument": "HSI",
+   "contract": "HSI-2026U",
+   "action": "SELL",
+   "quantity": 4.0,
+   "kind": "RESIZE",
+   "decision_close": 24676.0
+  },
+  {
+   "instrument": "LFT9",
+   "contract": "LFT9-2026Z",
+   "action": "BUY",
+   "quantity": 4.0,
+   "kind": "RESIZE",
+   "decision_close": 10754.0
+  },
+  {
+   "instrument": "NIY",
+   "contract": "NIY-2026Z",
+   "action": "BUY",
+   "quantity": 3.0,
+   "kind": "RESIZE",
+   "decision_close": 63405.0
+  },
+  {
+   "instrument": "NQ",
+   "contract": "NQ-2026Z",
+   "action": "BUY",
+   "quantity": 1.0,
+   "kind": "OPEN",
+   "decision_close": 29246.75
+  },
+  {
+   "instrument": "PA",
+   "contract": "PA-2026Z",
+   "action": "SELL",
+   "quantity": 8.0,
+   "kind": "RESIZE",
+   "decision_close": 1302.6
+  },
+  {
+   "instrument": "RTY",
+   "contract": "RTY-2026Z",
+   "action": "BUY",
+   "quantity": 4.0,
+   "kind": "RESIZE",
+   "decision_close": 2894.7
+  },
+  {
+   "instrument": "SI",
+   "contract": "SI-2026Z",
+   "action": "SELL",
+   "quantity": 1.0,
+   "kind": "OPEN",
+   "decision_close": 6385.6
+  },
+  {
+   "instrument": "SXF",
+   "contract": "SXF-2026Z",
+   "action": "BUY",
+   "quantity": 9.0,
+   "kind": "RESIZE",
+   "decision_close": 2100.5
+  },
+  {
+   "instrument": "ZC",
+   "contract": "ZC-2026Z",
+   "action": "BUY",
+   "quantity": 8.0,
+   "kind": "RESIZE",
+   "decision_close": 535.75
+  },
+  {
+   "instrument": "ZF",
+   "contract": "ZF-2026Z",
+   "action": "SELL",
+   "quantity": 57.0,
+   "kind": "RESIZE",
+   "decision_close": 104.3672
+  },
+  {
+   "instrument": "ZL",
+   "contract": "ZL-2026Z",
+   "action": "SELL",
+   "quantity": 1.0,
+   "kind": "CLOSE",
+   "decision_close": 70.35
+  },
+  {
+   "instrument": "ZM",
+   "contract": "ZM-2026Z",
+   "action": "BUY",
+   "quantity": 12.0,
+   "kind": "RESIZE",
+   "decision_close": 365.4
+  },
+  {
+   "instrument": "ZW",
+   "contract": "ZW-2026Z",
+   "action": "SELL",
+   "quantity": 2.0,
+   "kind": "RESIZE",
+   "decision_close": 728.5
   }
  ],
  "outstanding": []
