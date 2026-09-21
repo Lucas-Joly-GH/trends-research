@@ -1581,7 +1581,14 @@ def status_paths(out: str) -> list:
 SITE = "https://lucas-joly-gh.github.io/trends-research/"
 
 
-def confirm_live(timeout_s: int = 300, every_s: int = 8) -> bool:
+# DIX MINUTES, PAS CINQ.  Le 2026-09-21 la poussee a reussi et Pages a servi
+# les nouveaux octets APRES le delai : la chaine s'est arretee au pas 1 sur des
+# donnees justes, deja publiees, et rien en aval n'a tourne -- ni les carnets
+# de deploiement, ni le plan du jour. Le cout d'attendre est cinq minutes de
+# plus une fois de temps en temps ; le cout d'abandonner trop tot est une
+# journee de chaine perdue pour un CDN lent. Le message se derive du chiffre,
+# donc il dit « up to 10 min » tout seul.
+def confirm_live(timeout_s: int = 600, every_s: int = 8) -> bool:
     """Attendre que le site SERVE reellement ce qu'on vient de pousser.
 
     POURQUOI PAS L'ETAT DU WORKFLOW.  L'API qui le donne demande a
