@@ -195,7 +195,7 @@ def train_wgan(
     if resume_from is not None:
         resume_path = Path(resume_from)
         if resume_path.exists():
-            ckpt = torch.load(str(resume_path), map_location=device, weights_only=False)
+            ckpt = torch.load(str(resume_path), map_location=device, weights_only=True)
             generator.load_state_dict(ckpt["generator_state"])
             critic.load_state_dict(ckpt["critic_state"])
             opt_G.load_state_dict(ckpt["opt_G_state"])
