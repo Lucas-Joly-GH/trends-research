@@ -2205,7 +2205,7 @@ def verify_vendor(started: float) -> int:
                 if c <= 0:
                     neg.append(f"{con} {d}")
                 if i and rows[i - 1][1] > 0 and abs(c / rows[i - 1][1] - 1) > 0.35:
-                    jumps.append(f"{con} {d}")
+                    jumps.append((sym, con, d, c / rows[i - 1][1] - 1))
                 vol_by_date.setdefault(d, []).append(1 if v > 0 else 0)
                 oi_by_date.setdefault(d, []).append(1 if oi > 0 else 0)
                 if 0 < i < len(rows) - 1 and oi == 0 \
@@ -2221,8 +2221,45 @@ def verify_vendor(started: float) -> int:
                  f"{len(unsorted_)} unsorted" if unsorted_ else "all sorted"))
     r.append(_ok("no duplicate date within a contract", not dupes,
                  f"{len(dupes)} with duplicates" if dupes else "all unique"))
-    r.append(_ok("no close moves more than 35% in a session", not jumps,
-                 f"{len(jumps)}: {jumps[:3]}" if jumps else "largest move within band"))
+    # A REAL MOVE SHOWS UP IN THE NEIGHBOURING CONTRACTS; A BAD PRINT DOES NOT.
+    # On 2026-11-05 VX-2026X closed +38.3% (17.74 -> 24.54) on 3-4x its usual
+    # volume, and the next two VIX months rose +23% and +14% the same session.
+    # That was a volatility spike, and failing on it withheld the site and
+    # stopped the deployment chain. A jump is accepted when another contract
+    # of the same market moved the same way that session by at least a third
+    # of it (and at least 10%); otherwise it stays a failure.
+    def _move(sym: str, con: str, d: str):
+        prev = None
+        for g in sorted((raw / sym).glob("*.csv")):
+            if g.stem == con:
+                continue
+            prev = None
+            with g.open(encoding="utf-8", errors="ignore") as fh:
+                for row in csv.DictReader(fh):
+                    try:
+                        cd, cc = row.get("Date", ""), float(row["Close"])
+                    except (ValueError, KeyError):
+                        continue
+                    if cd == d and prev and prev > 0 and cc > 0:
+                        yield cc / prev - 1
+                        break
+                    if cd > d:
+                        break
+                    prev = cc
+
+    confirmed, unconfirmed = [], []
+    for sym, con, d, ret in jumps:
+        need = max(0.10, abs(ret) / 3.0)
+        same = [x for x in _move(sym, con, d)
+                if x * ret > 0 and abs(x) >= need]
+        (confirmed if same else unconfirmed).append(f"{con} {d} {ret:+.0%}")
+    r.append(_ok("no close moves more than 35% in a session, unless the market "
+                 "moved", not unconfirmed,
+                 f"{len(unconfirmed)}: {unconfirmed[:3]}" if unconfirmed
+                 else "largest move within band"))
+    if confirmed:
+        r.append(_note("a move over 35% confirmed by the same market's other "
+                       "contracts", f"{len(confirmed)}: {confirmed[:3]}"))
 
     def _worst(by_date, what):
         worst, wd = 0.0, ""
